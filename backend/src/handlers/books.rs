@@ -3,16 +3,24 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::auth::middleware::AuthUser;
 use crate::errors::AppError;
 use crate::handlers::PaginatedResponse;
-use crate::models::{Book, BookQuery, BookWithAuthor, CreateBook, ReadingStatusType, UserRole};
+use crate::models::{Book, BookQuery, BookWithAuthor, CreateBook, ReadingStatusType, Tag, UserRole};
 use crate::services::book as book_service;
+use crate::services::tag as tag_service;
 use crate::AppState;
+
+#[derive(Debug, Serialize)]
+pub struct BookWithTags {
+    #[serde(flatten)]
+    pub book: BookWithAuthor,
+    pub tags: Vec<Tag>,
+}
 
 const DEFAULT_PAGE: i64 = 1;
 
@@ -30,16 +38,28 @@ pub struct ShelfQuery {
 pub async fn get_books(
     State(state): State<AppState>,
     Query(query): Query<BookQuery>,
-) -> Result<Json<PaginatedResponse<BookWithAuthor>>, AppError> {
+) -> Result<Json<PaginatedResponse<BookWithTags>>, AppError> {
     let page = query.page.unwrap_or(DEFAULT_PAGE);
-    let (data, total) =
-        book_service::get_books(&state.pool, page, query.search, query.tags).await?;
+    let tag_ids = query.tag_ids();
+    let (books, total) =
+        book_service::get_books(&state.pool, page, query.search, tag_ids).await?;
+
+    let book_ids: Vec<Uuid> = books.iter().map(|b| b.id).collect();
+    let mut tags_map = tag_service::get_tags_for_books(&state.pool, &book_ids).await?;
+
+    let data = books
+        .into_iter()
+        .map(|book| {
+            let tags = tags_map.remove(&book.id).unwrap_or_default();
+            BookWithTags { book, tags }
+        })
+        .collect();
 
     Ok(Json(PaginatedResponse {
         data,
         total,
         page,
-        per_page: 20,
+        per_page: 10,
     }))
 }
 
@@ -81,7 +101,7 @@ pub async fn get_shelf(
         data,
         total,
         page,
-        per_page: 20,
+        per_page: 10,
     }))
 }
 
@@ -97,6 +117,6 @@ pub async fn get_by_author(
         data,
         total,
         page,
-        per_page: 20,
+        per_page: 10,
     }))
 }

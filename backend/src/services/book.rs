@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::errors::AppError;
 use crate::models::{Book, BookWithAuthor, CreateBook, ReadingStatusType};
 
-const PAGE_SIZE: i64 = 20;
+const PAGE_SIZE: i64 = 10;
 
 pub async fn get_books(
     pool: &PgPool,
@@ -17,6 +17,7 @@ pub async fn get_books(
     // Build query dynamically based on filters
     let rows = match (&search, &tag_ids) {
         (Some(q), Some(tags)) if !tags.is_empty() => {
+            let pattern = format!("%{}%", q);
             sqlx::query_as::<_, BookWithAuthor>(
                 r#"
                 SELECT
@@ -28,7 +29,7 @@ pub async fn get_books(
                     u.avatar_url AS author_avatar_url
                 FROM up_book b
                 JOIN up_user u ON u.id = b.author_id
-                WHERE b.search_vector @@ plainto_tsquery('simple', $1)
+                WHERE (b.title ILIKE $1 OR u.display_name ILIKE $1)
                   AND (
                       SELECT COUNT(*) FROM up_book_tag bt
                       WHERE bt.book_id = b.id AND bt.tag_id = ANY($2)
@@ -37,7 +38,7 @@ pub async fn get_books(
                 LIMIT $3 OFFSET $4
                 "#,
             )
-            .bind(q)
+            .bind(&pattern)
             .bind(tags)
             .bind(PAGE_SIZE)
             .bind(offset)
@@ -45,6 +46,7 @@ pub async fn get_books(
             .await?
         }
         (Some(q), _) => {
+            let pattern = format!("%{}%", q);
             sqlx::query_as::<_, BookWithAuthor>(
                 r#"
                 SELECT
@@ -56,12 +58,12 @@ pub async fn get_books(
                     u.avatar_url AS author_avatar_url
                 FROM up_book b
                 JOIN up_user u ON u.id = b.author_id
-                WHERE b.search_vector @@ plainto_tsquery('simple', $1)
+                WHERE b.title ILIKE $1 OR u.display_name ILIKE $1
                 ORDER BY b.created_at DESC
                 LIMIT $2 OFFSET $3
                 "#,
             )
-            .bind(q)
+            .bind(&pattern)
             .bind(PAGE_SIZE)
             .bind(offset)
             .fetch_all(pool)
@@ -118,26 +120,33 @@ pub async fn get_books(
 
     let total = match (&search, &tag_ids) {
         (Some(q), Some(tags)) if !tags.is_empty() => {
+            let pattern = format!("%{}%", q);
             sqlx::query_scalar::<_, i64>(
                 r#"
                 SELECT COUNT(*) FROM up_book b
-                WHERE b.search_vector @@ plainto_tsquery('simple', $1)
+                JOIN up_user u ON u.id = b.author_id
+                WHERE (b.title ILIKE $1 OR u.display_name ILIKE $1)
                   AND (
                       SELECT COUNT(*) FROM up_book_tag bt
                       WHERE bt.book_id = b.id AND bt.tag_id = ANY($2)
                   ) = array_length($2, 1)
                 "#,
             )
-            .bind(q)
+            .bind(&pattern)
             .bind(tags)
             .fetch_one(pool)
             .await?
         }
         (Some(q), _) => {
+            let pattern = format!("%{}%", q);
             sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM up_book b WHERE b.search_vector @@ plainto_tsquery('simple', $1)",
+                r#"
+                SELECT COUNT(*) FROM up_book b
+                JOIN up_user u ON u.id = b.author_id
+                WHERE b.title ILIKE $1 OR u.display_name ILIKE $1
+                "#,
             )
-            .bind(q)
+            .bind(&pattern)
             .fetch_one(pool)
             .await?
         }

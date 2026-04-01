@@ -65,5 +65,16 @@ pub struct BookWithAuthor {
 pub struct BookQuery {
     pub page: Option<i64>,
     pub search: Option<String>,
-    pub tags: Option<Vec<Uuid>>,
+    pub tags: Option<String>,
+}
+
+impl BookQuery {
+    pub fn tag_ids(&self) -> Option<Vec<Uuid>> {
+        self.tags.as_ref().and_then(|s| {
+            let ids: Vec<Uuid> = s.split(',')
+                .filter_map(|t| t.trim().parse().ok())
+                .collect();
+            if ids.is_empty() { None } else { Some(ids) }
+        })
+    }
 }

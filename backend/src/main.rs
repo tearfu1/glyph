@@ -71,7 +71,8 @@ async fn main() {
     let auth_routes = Router::new()
         .route("/login", post(auth::handlers::login))
         .route("/register", post(auth::handlers::register))
-        .route("/refresh", post(auth::handlers::refresh));
+        .route("/refresh", post(auth::handlers::refresh))
+        .route("/logout", post(auth::handlers::logout));
 
     let book_routes = Router::new()
         .route("/", get(handlers::books::get_books).post(handlers::books::add_book))

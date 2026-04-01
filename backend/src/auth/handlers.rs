@@ -169,6 +169,16 @@ pub async fn refresh(
     ))
 }
 
+pub async fn logout(jar: CookieJar) -> CookieJar {
+    let cookie = Cookie::build(("refresh_token", ""))
+        .path("/api/auth")
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .max_age(Duration::ZERO)
+        .build();
+    jar.add(cookie)
+}
+
 fn build_refresh_cookie(token: String, max_age_secs: i64) -> Cookie<'static> {
     Cookie::build(("refresh_token", token))
         .path("/api/auth")

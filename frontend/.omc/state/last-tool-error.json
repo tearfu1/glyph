@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"PGPASSWORD=glyph psql -h localhost -p 5433 -U glyph -d glyph -c \\\"\\\\dt\\\" 2>&1\",\"description\":\"List database tables\"}",
+  "error": "Exit code 127\n/bin/bash: line 1: psql: command not found",
+  "timestamp": "2026-04-01T19:49:03.384Z",
+  "retry_count": 1
+}
