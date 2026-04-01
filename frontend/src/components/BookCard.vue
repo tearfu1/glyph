@@ -1,7 +1,16 @@
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import type { BookWithAuthor } from '@/types/book'
+import type { ReadingStatusType } from '@/types/reading-status'
 
-defineProps<{ book: BookWithAuthor }>()
+defineProps<{
+  book: BookWithAuthor
+  readingStatus?: ReadingStatusType | null
+}>()
+
+const emit = defineEmits<{
+  'update:readingStatus': [status: ReadingStatusType]
+}>()
 
 const tagColors: Record<string, string> = {
   genre: 'bg-indigo-50 text-indigo-700',
@@ -9,14 +18,44 @@ const tagColors: Record<string, string> = {
   theme: 'bg-emerald-50 text-emerald-700',
   period: 'bg-slate-100 text-slate-600',
 }
+
+const statusLabels: Record<ReadingStatusType, string> = {
+  want_to_read: 'Хочу прочитать',
+  reading: 'Читаю',
+  read: 'Прочитано',
+}
+
+const statusColors: Record<ReadingStatusType, string> = {
+  want_to_read: 'text-amber-600 bg-amber-50 border-amber-200',
+  reading: 'text-indigo-600 bg-indigo-50 border-indigo-200',
+  read: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+}
+
+const statusOptions: ReadingStatusType[] = ['want_to_read', 'reading', 'read']
+
+const menuOpen = ref(false)
+
+function selectStatus(status: ReadingStatusType) {
+  menuOpen.value = false
+  emit('update:readingStatus', status)
+}
+
+function onClickOutside(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('.status-menu')) {
+    menuOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', onClickOutside))
+onUnmounted(() => document.removeEventListener('click', onClickOutside))
 </script>
 
 <template>
   <RouterLink
     :to="{ name: 'book', params: { id: book.id } }"
-    class="group block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
+    class="group block bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
   >
-    <div class="aspect-[2/3] bg-gray-100 overflow-hidden">
+    <div class="aspect-[2/3] bg-gray-100 overflow-hidden rounded-t-xl">
       <img
         v-if="book.cover_url"
         :src="book.cover_url"
@@ -45,6 +84,40 @@ const tagColors: Record<string, string> = {
         >
           {{ tag.name }}
         </span>
+      </div>
+
+      <!-- Reading Status -->
+      <div
+        v-if="readingStatus !== undefined"
+        class="mt-2 relative status-menu"
+        @click.prevent.stop
+      >
+        <button
+          @click="menuOpen = !menuOpen"
+          class="w-full flex items-center justify-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border transition-colors cursor-pointer"
+          :class="readingStatus
+            ? statusColors[readingStatus]
+            : 'text-gray-400 bg-gray-50 border-gray-200 hover:text-gray-600 hover:border-gray-300'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+          <span class="truncate">{{ readingStatus ? statusLabels[readingStatus] : 'Отметить' }}</span>
+        </button>
+        <div
+          v-if="menuOpen"
+          class="absolute left-0 right-0 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20"
+        >
+          <button
+            v-for="opt in statusOptions"
+            :key="opt"
+            @click="selectStatus(opt)"
+            class="w-full text-left px-3 py-1.5 text-xs transition-colors cursor-pointer hover:bg-gray-50"
+            :class="readingStatus === opt ? 'text-indigo-600 font-medium' : 'text-gray-700'"
+          >
+            {{ statusLabels[opt] }}
+          </button>
+        </div>
       </div>
     </div>
   </RouterLink>

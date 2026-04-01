@@ -34,4 +34,8 @@ pub struct QuestionWithUser {
     pub like_count: i64,
     pub dislike_count: i64,
     pub has_answer: bool,
+    pub answer_text: Option<String>,
+    pub answer_created_at: Option<DateTime<Utc>>,
+    pub answer_user_display_name: Option<String>,
+    pub answer_user_avatar_url: Option<String>,
 }

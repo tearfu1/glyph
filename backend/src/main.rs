@@ -116,6 +116,7 @@ async fn main() {
         .nest("/api/questions", question_item_routes)
         .route("/api/tags", get(handlers::tags::get_tags))
         .route("/api/reading-statuses", get(handlers::reading_status::get_statuses))
+        .route("/api/reading-statuses/my", get(handlers::reading_status::get_my_statuses))
         .nest("/api/users", user_routes)
         .nest("/api/admin", admin_routes)
         .layer(Extension(state.config.clone()))

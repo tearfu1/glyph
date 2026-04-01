@@ -13,9 +13,15 @@ const QUESTION_WITH_USER_SELECT: &str = r#"
         u.avatar_url AS user_avatar_url,
         COALESCE((SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true), 0) AS like_count,
         COALESCE((SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = false), 0) AS dislike_count,
-        EXISTS(SELECT 1 FROM up_answer WHERE question_id = q.id) AS has_answer
+        EXISTS(SELECT 1 FROM up_answer WHERE question_id = q.id) AS has_answer,
+        a.text AS answer_text,
+        a.created_at AS answer_created_at,
+        au.display_name AS answer_user_display_name,
+        au.avatar_url AS answer_user_avatar_url
     FROM up_question q
     JOIN up_user u ON u.id = q.user_id
+    LEFT JOIN up_answer a ON a.question_id = q.id
+    LEFT JOIN up_user au ON au.id = a.user_id
 "#;
 
 pub async fn get_questions(

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import type { BookWithAuthor } from '@/types/book'
+import type { ReadingStatusType } from '@/types/reading-status'
 import { getBooks } from '@/api/books'
+import { getMyStatuses, setReadingStatus } from '@/api/reading-status'
 import BookCard from '@/components/BookCard.vue'
 import TagFilter from '@/components/TagFilter.vue'
 import Pagination from '@/components/Pagination.vue'
+
+const auth = useAuthStore()
 
 const books = ref<BookWithAuthor[]>([])
 const page = ref(1)
@@ -13,6 +18,8 @@ const perPage = ref(20)
 const search = ref('')
 const selectedTags = ref<string[]>([])
 const loading = ref(false)
+
+const statusMap = ref<Map<string, ReadingStatusType>>(new Map())
 
 let searchTimeout: ReturnType<typeof setTimeout> | undefined
 
@@ -32,6 +39,32 @@ async function fetchBooks() {
   }
 }
 
+async function fetchStatuses() {
+  if (!auth.isAuthenticated) return
+  try {
+    const { data } = await getMyStatuses()
+    const map = new Map<string, ReadingStatusType>()
+    for (const s of data) {
+      map.set(s.book_id, s.status)
+    }
+    statusMap.value = map
+  } catch {}
+}
+
+function getBookStatus(bookId: string): ReadingStatusType | null | undefined {
+  if (!auth.isAuthenticated) return undefined
+  return statusMap.value.get(bookId) ?? null
+}
+
+async function onStatusChange(bookId: string, status: ReadingStatusType) {
+  statusMap.value.set(bookId, status)
+  try {
+    await setReadingStatus(bookId, status)
+  } catch {
+    statusMap.value.delete(bookId)
+  }
+}
+
 function onSearchInput() {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
@@ -48,6 +81,7 @@ watch(selectedTags, () => {
 watch(page, fetchBooks)
 
 fetchBooks()
+fetchStatuses()
 </script>
 
 <template>
@@ -77,7 +111,13 @@ fetchBooks()
 
         <template v-else>
           <div v-if="books.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-            <BookCard v-for="book in books" :key="book.id" :book="book" />
+            <BookCard
+              v-for="book in books"
+              :key="book.id"
+              :book="book"
+              :reading-status="getBookStatus(book.id)"
+              @update:reading-status="onStatusChange(book.id, $event)"
+            />
           </div>
 
           <div v-else class="text-center py-20 text-gray-500">

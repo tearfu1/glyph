@@ -12,6 +12,14 @@ pub async fn get_statuses() -> Json<Vec<ReadingStatusType>> {
     Json(reading_status_service::get_statuses().await)
 }
 
+pub async fn get_my_statuses(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<Vec<ReadingStatus>>, AppError> {
+    let statuses = reading_status_service::get_my_statuses(&state.pool, auth.0.sub).await?;
+    Ok(Json(statuses))
+}
+
 pub async fn set_status(
     State(state): State<AppState>,
     auth: AuthUser,
