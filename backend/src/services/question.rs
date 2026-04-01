@@ -1,0 +1,305 @@
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::errors::AppError;
+use crate::models::{CreateQuestion, Question, QuestionWithUser};
+
+const PAGE_SIZE: i64 = 20;
+
+const QUESTION_WITH_USER_SELECT: &str = r#"
+    SELECT q.id, q.book_id, q.user_id, q.text, q.created_at, q.updated_at,
+        u.login AS user_login,
+        u.display_name AS user_display_name,
+        u.avatar_url AS user_avatar_url,
+        COALESCE((SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true), 0) AS like_count,
+        COALESCE((SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = false), 0) AS dislike_count,
+        EXISTS(SELECT 1 FROM up_answer WHERE question_id = q.id) AS has_answer
+    FROM up_question q
+    JOIN up_user u ON u.id = q.user_id
+"#;
+
+pub async fn get_questions(
+    pool: &PgPool,
+    book_id: Uuid,
+    page: i64,
+) -> Result<(Vec<QuestionWithUser>, i64), AppError> {
+    let offset = (page.max(1) - 1) * PAGE_SIZE;
+
+    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
+        "{} WHERE q.book_id = $1 ORDER BY q.created_at DESC LIMIT $2 OFFSET $3",
+        QUESTION_WITH_USER_SELECT
+    ))
+    .bind(book_id)
+    .bind(PAGE_SIZE)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM up_question WHERE book_id = $1",
+    )
+    .bind(book_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok((rows, total))
+}
+
+pub async fn get_my_questions_for_book(
+    pool: &PgPool,
+    book_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<QuestionWithUser>, AppError> {
+    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
+        "{} WHERE q.book_id = $1 AND q.user_id = $2 ORDER BY q.created_at DESC",
+        QUESTION_WITH_USER_SELECT
+    ))
+    .bind(book_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn get_best_questions(
+    pool: &PgPool,
+    book_id: Uuid,
+) -> Result<Vec<QuestionWithUser>, AppError> {
+    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
+        r#"{} WHERE q.book_id = $1
+        ORDER BY (
+            SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true
+        ) DESC
+        LIMIT 5"#,
+        QUESTION_WITH_USER_SELECT
+    ))
+    .bind(book_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn create_question(
+    pool: &PgPool,
+    book_id: Uuid,
+    user_id: Uuid,
+    input: CreateQuestion,
+) -> Result<Question, AppError> {
+    let question = sqlx::query_as::<_, Question>(
+        r#"
+        INSERT INTO up_question (id, book_id, user_id, text)
+        VALUES (gen_random_uuid(), $1, $2, $3)
+        RETURNING *
+        "#,
+    )
+    .bind(book_id)
+    .bind(user_id)
+    .bind(&input.text)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(question)
+}
+
+pub async fn update_question(
+    pool: &PgPool,
+    id: Uuid,
+    user_id: Uuid,
+    input: CreateQuestion,
+) -> Result<Question, AppError> {
+    let question = sqlx::query_as::<_, Question>(
+        "SELECT * FROM up_question WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Question {} not found", id)))?;
+
+    if question.user_id != user_id {
+        return Err(AppError::Forbidden);
+    }
+
+    let updated = sqlx::query_as::<_, Question>(
+        r#"
+        UPDATE up_question SET text = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(&input.text)
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(updated)
+}
+
+pub async fn delete_question(
+    pool: &PgPool,
+    id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let question = sqlx::query_as::<_, Question>(
+        "SELECT * FROM up_question WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Question {} not found", id)))?;
+
+    if question.user_id != user_id {
+        return Err(AppError::Forbidden);
+    }
+
+    sqlx::query("DELETE FROM up_question WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn add_question_reaction(
+    pool: &PgPool,
+    question_id: Uuid,
+    user_id: Uuid,
+    is_like: bool,
+) -> Result<(), AppError> {
+    sqlx::query_as::<_, Question>(
+        "SELECT * FROM up_question WHERE id = $1",
+    )
+    .bind(question_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Question {} not found", question_id)))?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO up_question_reaction (question_id, user_id, is_like)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (question_id, user_id) DO UPDATE SET is_like = $3
+        "#,
+    )
+    .bind(question_id)
+    .bind(user_id)
+    .bind(is_like)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn remove_question_reaction(
+    pool: &PgPool,
+    question_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "DELETE FROM up_question_reaction WHERE question_id = $1 AND user_id = $2",
+    )
+    .bind(question_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn get_incoming_questions(
+    pool: &PgPool,
+    author_id: Uuid,
+    page: i64,
+) -> Result<(Vec<QuestionWithUser>, i64), AppError> {
+    let offset = (page.max(1) - 1) * PAGE_SIZE;
+
+    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
+        r#"{} JOIN up_book b ON b.id = q.book_id
+        WHERE b.author_id = $1
+          AND NOT EXISTS (SELECT 1 FROM up_answer WHERE question_id = q.id)
+        ORDER BY q.created_at DESC LIMIT $2 OFFSET $3"#,
+        QUESTION_WITH_USER_SELECT
+    ))
+    .bind(author_id)
+    .bind(PAGE_SIZE)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*) FROM up_question q
+        JOIN up_book b ON b.id = q.book_id
+        WHERE b.author_id = $1
+          AND NOT EXISTS (SELECT 1 FROM up_answer WHERE question_id = q.id)
+        "#,
+    )
+    .bind(author_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok((rows, total))
+}
+
+pub async fn get_answered_questions(
+    pool: &PgPool,
+    author_id: Uuid,
+    page: i64,
+) -> Result<(Vec<QuestionWithUser>, i64), AppError> {
+    let offset = (page.max(1) - 1) * PAGE_SIZE;
+
+    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
+        r#"{} JOIN up_book b ON b.id = q.book_id
+        WHERE b.author_id = $1
+          AND EXISTS (SELECT 1 FROM up_answer WHERE question_id = q.id)
+        ORDER BY q.created_at DESC LIMIT $2 OFFSET $3"#,
+        QUESTION_WITH_USER_SELECT
+    ))
+    .bind(author_id)
+    .bind(PAGE_SIZE)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*) FROM up_question q
+        JOIN up_book b ON b.id = q.book_id
+        WHERE b.author_id = $1
+          AND EXISTS (SELECT 1 FROM up_answer WHERE question_id = q.id)
+        "#,
+    )
+    .bind(author_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok((rows, total))
+}
+
+pub async fn get_my_questions(
+    pool: &PgPool,
+    user_id: Uuid,
+    page: i64,
+) -> Result<(Vec<QuestionWithUser>, i64), AppError> {
+    let offset = (page.max(1) - 1) * PAGE_SIZE;
+
+    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
+        "{} WHERE q.user_id = $1 ORDER BY q.created_at DESC LIMIT $2 OFFSET $3",
+        QUESTION_WITH_USER_SELECT
+    ))
+    .bind(user_id)
+    .bind(PAGE_SIZE)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM up_question WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok((rows, total))
+}
