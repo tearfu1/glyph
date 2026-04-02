@@ -84,7 +84,7 @@ async fn main() {
         .route("/{bookId}/questions", get(handlers::questions::get_questions).post(handlers::questions::create_question))
         .route("/{bookId}/questions/my", get(handlers::questions::get_my_questions_for_book))
         .route("/{bookId}/questions/best", get(handlers::questions::get_best_questions))
-        .route("/{bookId}/reading-status", post(handlers::reading_status::set_status));
+        .route("/{bookId}/reading-status", post(handlers::reading_status::set_status).delete(handlers::reading_status::delete_status));
 
     let review_item_routes = Router::new()
         .route("/{id}", put(handlers::reviews::update_review).delete(handlers::reviews::delete_review))

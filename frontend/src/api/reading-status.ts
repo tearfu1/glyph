@@ -8,3 +8,7 @@ export function getMyStatuses() {
 export function setReadingStatus(bookId: string, status: ReadingStatusType) {
   return client.post<ReadingStatus>(`/books/${bookId}/reading-status`, { status })
 }
+
+export function deleteReadingStatus(bookId: string) {
+  return client.delete(`/books/${bookId}/reading-status`)
+}

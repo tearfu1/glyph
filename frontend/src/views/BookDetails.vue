@@ -4,17 +4,17 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { BookWithAuthor } from '@/types/book'
 import type { ReviewWithUser } from '@/types/review'
-import type { QuestionWithUser } from '@/types/question'
 import type { ReadingStatusType } from '@/types/reading-status'
 import { getBook } from '@/api/books'
 import * as reviewsApi from '@/api/reviews'
 import * as questionsApi from '@/api/questions'
 import { getMyStatuses, setReadingStatus as apiSetReadingStatus } from '@/api/reading-status'
 import { useReactions } from '@/composables/useReactions'
+import { usePagination } from '@/composables/usePagination'
 import Pagination from '@/components/Pagination.vue'
 import ReviewCard from '@/components/ReviewCard.vue'
+import QuestionCard from '@/components/QuestionCard.vue'
 import StarRating from '@/components/StarRating.vue'
-import ReactionButtons from '@/components/ReactionButtons.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -24,11 +24,15 @@ const bookId = computed(() => route.params.id as string)
 const book = ref<BookWithAuthor | null>(null)
 const loading = ref(true)
 
-// Reviews
-const reviews = ref<ReviewWithUser[]>([])
-const reviewsPage = ref(1)
-const reviewsTotal = ref(0)
-const reviewsPerPage = ref(10)
+// Reviews (paginated)
+const {
+  items: reviews,
+  page: reviewsPage,
+  total: reviewsTotal,
+  perPage: reviewsPerPage,
+  load: fetchReviews,
+} = usePagination((page) => reviewsApi.getReviews(bookId.value, page))
+
 const myReview = ref<ReviewWithUser | null>(null)
 
 // Review form
@@ -45,11 +49,15 @@ const currentStatus = ref<ReadingStatusType | null>(null)
 const statusLoading = ref(false)
 const showStatusMenu = ref(false)
 
-// Questions
-const questions = ref<QuestionWithUser[]>([])
-const questionsPage = ref(1)
-const questionsTotal = ref(0)
-const questionsPerPage = ref(10)
+// Questions (paginated)
+const {
+  items: questions,
+  page: questionsPage,
+  total: questionsTotal,
+  perPage: questionsPerPage,
+  load: fetchQuestions,
+} = usePagination((page) => questionsApi.getQuestions(bookId.value, page))
+
 const questionText = ref('')
 const questionSubmitting = ref(false)
 
@@ -102,29 +110,11 @@ async function fetchBook() {
   }
 }
 
-async function fetchReviews() {
-  try {
-    const { data } = await reviewsApi.getReviews(bookId.value, reviewsPage.value)
-    reviews.value = data.data
-    reviewsTotal.value = data.total
-    reviewsPerPage.value = data.per_page
-  } catch {}
-}
-
 async function fetchMyReview() {
   if (!auth.isAuthenticated) return
   try {
     const { data } = await reviewsApi.getMyReview(bookId.value)
     myReview.value = data
-  } catch {}
-}
-
-async function fetchQuestions() {
-  try {
-    const { data } = await questionsApi.getQuestions(bookId.value, questionsPage.value)
-    questions.value = data.data
-    questionsTotal.value = data.total
-    questionsPerPage.value = data.per_page
   } catch {}
 }
 
@@ -223,9 +213,6 @@ function closeStatusMenu(e: MouseEvent) {
     showStatusMenu.value = false
   }
 }
-
-watch(reviewsPage, fetchReviews)
-watch(questionsPage, fetchQuestions)
 
 onMounted(() => {
   fetchBook()
@@ -513,75 +500,12 @@ onUnmounted(() => {
 
           <!-- Questions list -->
           <div v-if="questions.length" class="space-y-4">
-            <div
+            <QuestionCard
               v-for="question in questions"
               :key="question.id"
-              class="p-5 bg-white border border-gray-200 rounded-xl"
-            >
-              <div class="flex items-start justify-between gap-4">
-                <div class="flex items-center gap-3">
-                  <RouterLink :to="{ name: 'user', params: { id: question.user_id } }" class="shrink-0">
-                    <img
-                      v-if="question.user_avatar_url"
-                      :src="question.user_avatar_url"
-                      :alt="question.user_display_name"
-                      class="w-8 h-8 rounded-full object-cover"
-                    />
-                    <div
-                      v-else
-                      class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-sm font-semibold"
-                    >
-                      {{ question.user_display_name?.charAt(0)?.toUpperCase() }}
-                    </div>
-                  </RouterLink>
-                  <RouterLink
-                    :to="{ name: 'user', params: { id: question.user_id } }"
-                    class="text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors"
-                  >
-                    {{ question.user_display_name }}
-                  </RouterLink>
-                  <span
-                    v-if="question.has_answer"
-                    class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-50 text-emerald-700"
-                  >
-                    Есть ответ
-                  </span>
-                </div>
-                <span class="text-xs text-gray-400 shrink-0">{{ formatDate(question.created_at) }}</span>
-              </div>
-              <p class="mt-3 text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ question.text }}</p>
-
-              <!-- Answer -->
-              <div v-if="question.answer_text" class="mt-4 ml-4 pl-4 border-l-2 border-indigo-200">
-                <div class="flex items-center gap-2 mb-1.5">
-                  <img
-                    v-if="question.answer_user_avatar_url"
-                    :src="question.answer_user_avatar_url"
-                    :alt="question.answer_user_display_name ?? ''"
-                    class="w-6 h-6 rounded-full object-cover"
-                  />
-                  <div
-                    v-else-if="question.answer_user_display_name"
-                    class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-[10px] font-semibold"
-                  >
-                    {{ question.answer_user_display_name.charAt(0).toUpperCase() }}
-                  </div>
-                  <span class="text-xs font-medium text-indigo-600">{{ question.answer_user_display_name }}</span>
-                  <span class="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">Автор</span>
-                  <span v-if="question.answer_created_at" class="text-xs text-gray-400 ml-auto">{{ formatDate(question.answer_created_at) }}</span>
-                </div>
-                <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ question.answer_text }}</p>
-              </div>
-
-              <div class="mt-3">
-                <ReactionButtons
-                  :like-count="question.like_count"
-                  :dislike-count="question.dislike_count"
-                  :user-reaction="question.user_reaction"
-                  @react="onQuestionReact(question, $event)"
-                />
-              </div>
-            </div>
+              :question="question"
+              @react="onQuestionReact(question, $event)"
+            />
           </div>
 
           <div v-else-if="!loading" class="text-center py-10 text-gray-400 text-sm">

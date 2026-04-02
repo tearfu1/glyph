@@ -19,6 +19,7 @@ const DEFAULT_PAGE: i64 = 1;
 #[derive(Debug, Deserialize)]
 pub struct PageQuery {
     pub page: Option<i64>,
+    pub per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,14 +34,15 @@ pub async fn get_questions(
     auth: OptionalAuthUser,
 ) -> Result<Json<PaginatedResponse<QuestionWithUser>>, AppError> {
     let page = query.page.unwrap_or(DEFAULT_PAGE);
+    let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
     let current_user_id = auth.0.map(|c| c.sub);
-    let (data, total) = question_service::get_questions(&state.pool, book_id, page, current_user_id).await?;
+    let (data, total) = question_service::get_questions(&state.pool, book_id, page, per_page, current_user_id).await?;
 
     Ok(Json(PaginatedResponse {
         data,
         total,
         page,
-        per_page: 20,
+        per_page,
     }))
 }
 

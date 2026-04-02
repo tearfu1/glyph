@@ -1,4 +1,5 @@
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 use uuid::Uuid;
 
@@ -18,6 +19,15 @@ pub async fn get_my_statuses(
 ) -> Result<Json<Vec<ReadingStatus>>, AppError> {
     let statuses = reading_status_service::get_my_statuses(&state.pool, auth.0.sub).await?;
     Ok(Json(statuses))
+}
+
+pub async fn delete_status(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(book_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    reading_status_service::delete_reading_status(&state.pool, auth.0.sub, book_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn set_status(

@@ -19,95 +19,84 @@
 
 **Файл:** `frontend/src/composables/useReactions.ts`
 
-- Обобщённая логика toggle-реакций, заменяет дублирование `toggleReaction` / `toggleQuestionReaction` в BookDetails
+- Обобщённая логика toggle-реакций, заменяет дублирование
 - Принимает `addReaction`, `removeReaction`, `onUpdate` callback
-- Возвращает `toggleReaction(item, isLike)` — проверяет авторизацию, toggle/remove по `user_reaction`, вызывает refresh
-- Используется в BookDetails.vue (2 экземпляра: reviews + questions) и UserProfile.vue (reviews)
+- Возвращает `toggleReaction(item, isLike)`
+- Используется в BookDetails.vue (reviews + questions) и UserProfile.vue (reviews)
 
-### 3. Компонент ReactionButtons.vue
+### 3. Composable usePagination.ts
+
+**Файл:** `frontend/src/composables/usePagination.ts`
+
+- Обобщённый паттерн пагинации: `usePagination(fetchFn)` → `{ items, page, total, perPage, loading, load, changePage }`
+- Автоматический watch на `page` → вызов `load()`
+- fetchFn принимает page, возвращает `Promise<{ data: PaginatedResponse<T> }>`
+- Используется в HomeView (books), BookDetails (reviews, questions), UserProfile (reviews, shelf)
+- Заменяет дублирование из ~6 мест
+
+### 4. Компонент ReactionButtons.vue
 
 **Файл:** `frontend/src/components/ReactionButtons.vue`
 
 - Props: `likeCount`, `dislikeCount`, `userReaction` (boolean | null)
 - Emit: `react(isLike: boolean)`
-- Кнопки с SVG-иконками (thumbs-up/down), подсветка активной реакции (indigo/red)
-- Счётчики скрываются при нулевом значении
+- Кнопки с SVG-иконками, подсветка активной реакции
 
-### 4. Компонент StarRating.vue
+### 5. Компонент StarRating.vue
 
 **Файл:** `frontend/src/components/StarRating.vue`
 
-- Props: `modelValue` (1-5), `readonly` (boolean), `size` ('sm' | 'md' | 'lg')
-- Emit: `update:modelValue` (только если не readonly)
-- Режим readonly: `<span>`, без hover-эффектов — для отображения рейтинга
-- Режим интерактивный: `<button>`, hover-scale, hover-color — для формы
-- Три размера: sm (3.5), md (5), lg (7)
+- Props: `modelValue` (1-5), `readonly`, `size` ('sm' | 'md' | 'lg')
+- Режим readonly и интерактивный
 
-### 5. Компонент ReviewCard.vue
+### 6. Компонент ReviewCard.vue
 
 **Файл:** `frontend/src/components/ReviewCard.vue`
 
 - Props: `review: ReviewWithUser`
 - Emit: `react(isLike: boolean)`
-- Аватар (изображение или инициал) → ссылка на профиль `/user/:id`
-- Имя пользователя → ссылка на профиль
-- StarRating (readonly, sm)
-- Текст рецензии, дата
+- Аватар, имя (ссылка на профиль), StarRating, текст, дата, ReactionButtons
+
+### 7. Компонент QuestionCard.vue
+
+**Файл:** `frontend/src/components/QuestionCard.vue`
+
+- Props: `question: QuestionWithUser`
+- Emit: `react(isLike: boolean)`
+- Аватар, имя (ссылка на профиль), текст, дата, бейдж «Есть ответ»
+- Блок ответа автора: indigo-полоска слева, аватар + имя, бейдж «Автор», дата, текст
 - ReactionButtons
-- Используется в BookDetails.vue и UserProfile.vue
+- Вынесен из BookDetails.vue, используется там же
 
-### 6. Страница UserProfile.vue
+### 8. Страница UserProfile.vue
 
-**Файл:** `frontend/src/views/UserProfile.vue`  
+**Файл:** `frontend/src/views/UserProfile.vue`
 **Маршрут:** `/user/:id` (name: `user`)
 
 - Загрузка профиля через `getUserProfile(userId)` → PublicUser
-- Шапка: аватар 80px, display_name, @login, бейдж роли (цветовая кодировка), дата регистрации
-- Кнопка «Настройки» видна только на своём профиле (`isOwnProfile`)
-- Секция рецензий: пагинация, ReviewCard, ссылка «Перейти к книге» над каждой карточкой
+- Шапка: аватар 80px, display_name, @login, бейдж роли, дата регистрации
+- Кнопка «Настройки» видна только на своём профиле
+- **Табы:** «Рецензии» / «Полка книг» с бейджами-счётчиками
+- **Рецензии:** пагинация через `usePagination`, ReviewCard, ссылка «Перейти к книге»
+- **Полка книг:** под-табы «Читаю / Хочу прочитать / Прочитано», BookCard в grid-сетке, пагинация
+  - API: `getShelfBooks(userId, status, page)` → `GET /api/books/shelf/:userId?status=&page=`
+  - Бэкенд возвращает `BookWithTags` (книга + автор + теги) — для полноценного отображения BookCard
 - Watch на `userId` — перезагрузка при смене маршрута
-- Спиннер, заглушка «Пользователь не найден», ссылка «← Каталог»
 
-### 7. Страница SettingsView.vue
+### 9. Страница SettingsView.vue
 
-**Файл:** `frontend/src/views/SettingsView.vue`  
+**Файл:** `frontend/src/views/SettingsView.vue`
 **Маршрут:** `/settings` (name: `settings`, meta: `requiresAuth`)
 
-- Загрузка через `getMySettings()` → заполняет форму
-- Превью аватара (изображение или инициал), логин, email (readonly)
-- Поля: display_name (required, maxlength 128), avatar_url (type=url, подсказка)
-- Сохранение через `updateMe()` → обновляет `auth.user` в Pinia (хедер обновляется реактивно)
+- Загрузка через `getMySettings()`, поля: display_name, avatar_url
+- Сохранение через `updateMe()` → обновляет auth store
 - Состояния: loading, saving, success, error
-- Валидация: кнопка disabled если пустое имя или идёт сохранение
 
-### 8. Маршруты и навигация
-
-**Файл:** `frontend/src/router/index.ts`
+### 10. Маршруты и навигация
 
 - `/user/:id` → UserProfile (lazy import)
 - `/settings` → SettingsView (lazy import, `meta: { requiresAuth: true }`)
-- Guard `requiresAuth` уже был реализован в `beforeEach`
-
-**Файл:** `frontend/src/components/layout/AppHeader.vue`
-
-- Имя пользователя → ссылка на свой профиль `/user/:id`
-- Иконка шестерёнки → ссылка на `/settings`
-- Кнопка «Выйти» — без изменений
-
-### 9. Рефакторинг BookDetails.vue
-
-**Файл:** `frontend/src/views/BookDetails.vue`
-
-Заменено:
-- Inline звёзды рейтинга → `<StarRating>` (пикер в форме + readonly в карточке «Ваша рецензия»)
-- Inline кнопки лайк/дизлайк для рецензий и вопросов → `<ReactionButtons>`
-- Inline карточки рецензий → `<ReviewCard>`
-- Дублированные `toggleReaction` / `toggleQuestionReaction` → `useReactions` composable (2 экземпляра)
-- Имя автора книги → ссылка на профиль `/user/:authorId`
-- Аватары пользователей в вопросах → ссылки на профили
-
-Не затронуто (сохранено как было):
-- Форма рецензии, «Ваша рецензия», чтение-статус dropdown, табы, форма вопроса, карточки вопросов с ответами
+- AppHeader: ссылки на профиль и настройки
 
 ---
 
@@ -116,9 +105,11 @@
 ```
 frontend/src/api/users.ts
 frontend/src/composables/useReactions.ts
+frontend/src/composables/usePagination.ts
 frontend/src/components/ReactionButtons.vue
 frontend/src/components/StarRating.vue
 frontend/src/components/ReviewCard.vue
+frontend/src/components/QuestionCard.vue
 frontend/src/views/UserProfile.vue
 frontend/src/views/SettingsView.vue
 ```
@@ -126,12 +117,15 @@ frontend/src/views/SettingsView.vue
 ## Изменённые файлы
 
 ```
-frontend/src/router/index.ts           — +2 маршрута
+frontend/src/router/index.ts               — +2 маршрута
 frontend/src/components/layout/AppHeader.vue — навигация профиль + настройки
-frontend/src/views/BookDetails.vue      — рефакторинг на компоненты + composable
+frontend/src/views/BookDetails.vue          — рефакторинг: usePagination + QuestionCard + useReactions
+frontend/src/views/HomeView.vue             — рефакторинг: usePagination
+frontend/src/api/books.ts                   — + getShelfBooks
+frontend/src/api/reading-status.ts          — + deleteReadingStatus
 ```
 
 ## Проверки
 
 - `vue-tsc --noEmit` — 0 ошибок
-- `vite build` — успешно, 116 модулей
+- `docker compose up -d --build backend` — успешно

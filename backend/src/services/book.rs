@@ -257,14 +257,22 @@ pub async fn get_books_for_shelf(
     user_id: Uuid,
     status: Option<ReadingStatusType>,
     page: i64,
-) -> Result<(Vec<Book>, i64), AppError> {
+) -> Result<(Vec<BookWithAuthor>, i64), AppError> {
     let offset = (page.max(1) - 1) * PAGE_SIZE;
 
     let rows = match &status {
         Some(s) => {
-            sqlx::query_as::<_, Book>(
+            sqlx::query_as::<_, BookWithAuthor>(
                 r#"
-                SELECT b.* FROM up_book b
+                SELECT
+                    b.id, b.title, b.description, b.cover_url, b.isbn,
+                    b.published_year, b.author_id, b.created_at, b.updated_at,
+                    u.login AS author_login,
+                    u.email AS author_email,
+                    u.display_name AS author_display_name,
+                    u.avatar_url AS author_avatar_url
+                FROM up_book b
+                JOIN up_user u ON u.id = b.author_id
                 JOIN up_reading_status rs ON rs.book_id = b.id
                 WHERE rs.user_id = $1 AND rs.status = $2
                 ORDER BY rs.updated_at DESC
@@ -279,9 +287,17 @@ pub async fn get_books_for_shelf(
             .await?
         }
         None => {
-            sqlx::query_as::<_, Book>(
+            sqlx::query_as::<_, BookWithAuthor>(
                 r#"
-                SELECT b.* FROM up_book b
+                SELECT
+                    b.id, b.title, b.description, b.cover_url, b.isbn,
+                    b.published_year, b.author_id, b.created_at, b.updated_at,
+                    u.login AS author_login,
+                    u.email AS author_email,
+                    u.display_name AS author_display_name,
+                    u.avatar_url AS author_avatar_url
+                FROM up_book b
+                JOIN up_user u ON u.id = b.author_id
                 JOIN up_reading_status rs ON rs.book_id = b.id
                 WHERE rs.user_id = $1
                 ORDER BY rs.updated_at DESC

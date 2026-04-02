@@ -1,5 +1,6 @@
 import client from './client'
 import type { BookWithAuthor, PaginatedResponse } from '@/types/book'
+import type { ReadingStatusType } from '@/types/reading-status'
 
 export interface BookQueryParams {
   page?: number
@@ -19,4 +20,10 @@ export function getBooks(params: BookQueryParams = {}) {
 
 export function getBook(id: string) {
   return client.get<BookWithAuthor>(`/books/${id}`)
+}
+
+export function getShelfBooks(userId: string, status?: ReadingStatusType, page = 1) {
+  return client.get<PaginatedResponse<BookWithAuthor>>(`/books/shelf/${userId}`, {
+    params: { status, page },
+  })
 }

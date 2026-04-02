@@ -26,6 +26,27 @@ pub async fn get_statuses() -> Vec<ReadingStatusType> {
     ]
 }
 
+pub async fn delete_reading_status(
+    pool: &PgPool,
+    user_id: Uuid,
+    book_id: Uuid,
+) -> Result<(), AppError> {
+    let rows_affected = sqlx::query(
+        "DELETE FROM up_reading_status WHERE user_id = $1 AND book_id = $2",
+    )
+    .bind(user_id)
+    .bind(book_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(AppError::NotFound("Reading status not found".to_string()));
+    }
+
+    Ok(())
+}
+
 pub async fn set_reading_status(
     pool: &PgPool,
     user_id: Uuid,

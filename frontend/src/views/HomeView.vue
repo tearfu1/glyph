@@ -1,43 +1,35 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import type { BookWithAuthor } from '@/types/book'
 import type { ReadingStatusType } from '@/types/reading-status'
 import { getBooks } from '@/api/books'
 import { getMyStatuses, setReadingStatus } from '@/api/reading-status'
+import { usePagination } from '@/composables/usePagination'
 import BookCard from '@/components/BookCard.vue'
 import TagFilter from '@/components/TagFilter.vue'
 import Pagination from '@/components/Pagination.vue'
 
 const auth = useAuthStore()
 
-const books = ref<BookWithAuthor[]>([])
-const page = ref(1)
-const total = ref(0)
-const perPage = ref(20)
 const search = ref('')
 const selectedTags = ref<string[]>([])
-const loading = ref(false)
+
+const {
+  items: books,
+  page,
+  total,
+  perPage,
+  loading,
+  load: fetchBooks,
+} = usePagination((p) => getBooks({
+  page: p,
+  search: search.value || undefined,
+  tags: selectedTags.value.length ? selectedTags.value : undefined,
+}))
 
 const statusMap = ref<Map<string, ReadingStatusType>>(new Map())
 
 let searchTimeout: ReturnType<typeof setTimeout> | undefined
-
-async function fetchBooks() {
-  loading.value = true
-  try {
-    const { data } = await getBooks({
-      page: page.value,
-      search: search.value || undefined,
-      tags: selectedTags.value.length ? selectedTags.value : undefined,
-    })
-    books.value = data.data
-    total.value = data.total
-    perPage.value = data.per_page
-  } finally {
-    loading.value = false
-  }
-}
 
 async function fetchStatuses() {
   if (!auth.isAuthenticated) return
@@ -77,8 +69,6 @@ watch(selectedTags, () => {
   page.value = 1
   fetchBooks()
 }, { deep: true })
-
-watch(page, fetchBooks)
 
 fetchBooks()
 fetchStatuses()

@@ -4,13 +4,14 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { PublicUser } from '@/types/user'
 import type { ReviewWithUser } from '@/types/review'
-import type { BookWithAuthor } from '@/types/book'
 import type { ReadingStatusType } from '@/types/reading-status'
 import { getUserProfile, getUserReviews } from '@/api/users'
-import { getBooks } from '@/api/books'
+import { getShelfBooks } from '@/api/books'
 import * as reviewsApi from '@/api/reviews'
 import { useReactions } from '@/composables/useReactions'
+import { usePagination } from '@/composables/usePagination'
 import ReviewCard from '@/components/ReviewCard.vue'
+import BookCard from '@/components/BookCard.vue'
 import Pagination from '@/components/Pagination.vue'
 
 const route = useRoute()
@@ -20,19 +21,28 @@ const userId = computed(() => route.params.id as string)
 const user = ref<PublicUser | null>(null)
 const loading = ref(true)
 
-// Reviews
-const reviews = ref<ReviewWithUser[]>([])
-const reviewsPage = ref(1)
-const reviewsTotal = ref(0)
-const reviewsPerPage = ref(20)
+// Active section
+const activeSection = ref<'reviews' | 'shelf'>('reviews')
+
+// Reviews (paginated)
+const {
+  items: reviews,
+  page: reviewsPage,
+  total: reviewsTotal,
+  perPage: reviewsPerPage,
+  load: fetchReviews,
+} = usePagination<ReviewWithUser>((page) => getUserReviews(userId.value, page))
 
 // Shelf
 const shelfTab = ref<ReadingStatusType>('reading')
-const shelfBooks = ref<BookWithAuthor[]>([])
-const shelfTotal = ref(0)
-const shelfPage = ref(1)
-const shelfPerPage = ref(20)
-const shelfLoading = ref(false)
+const {
+  items: shelfBooks,
+  page: shelfPage,
+  total: shelfTotal,
+  perPage: shelfPerPage,
+  loading: shelfLoading,
+  load: fetchShelf,
+} = usePagination((page) => getShelfBooks(userId.value, shelfTab.value, page))
 
 const isOwnProfile = computed(() => auth.user?.id === userId.value)
 
@@ -82,46 +92,28 @@ async function fetchUser() {
   }
 }
 
-async function fetchReviews() {
-  try {
-    const { data } = await getUserReviews(userId.value, reviewsPage.value)
-    reviews.value = data.data
-    reviewsTotal.value = data.total
-    reviewsPerPage.value = data.per_page
-  } catch {}
-}
-
-async function fetchShelf() {
-  shelfLoading.value = true
-  try {
-    const { data } = await getBooks({
-      page: shelfPage.value,
-      // Backend endpoint: GET /books/shelf/:userId?status=&page=
-    })
-    // TODO: connect to /books/shelf/:userId when shelf API is wired
-    shelfBooks.value = data.data
-    shelfTotal.value = data.total
-    shelfPerPage.value = data.per_page
-  } catch {
-  } finally {
-    shelfLoading.value = false
-  }
-}
-
 function handleReaction(review: ReviewWithUser, isLike: boolean) {
   onReviewReact(review, isLike)
 }
 
-watch(reviewsPage, fetchReviews)
+function changeShelfTab(tab: ReadingStatusType) {
+  shelfTab.value = tab
+  shelfPage.value = 1
+  fetchShelf()
+}
+
 watch(userId, () => {
   reviewsPage.value = 1
+  shelfPage.value = 1
   fetchUser()
   fetchReviews()
+  fetchShelf()
 })
 
 onMounted(() => {
   fetchUser()
   fetchReviews()
+  fetchShelf()
 })
 </script>
 
@@ -191,13 +183,34 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- ===== Reviews Section ===== -->
-      <section>
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">
-          Рецензии
-          <span v-if="reviewsTotal" class="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500">{{ reviewsTotal }}</span>
-        </h2>
+      <!-- ===== Section Tabs ===== -->
+      <div class="border-b border-gray-200 mb-6">
+        <nav class="flex gap-8">
+          <button
+            @click="activeSection = 'reviews'"
+            class="pb-3 text-sm font-medium border-b-2 transition-colors cursor-pointer"
+            :class="activeSection === 'reviews'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+          >
+            Рецензии
+            <span v-if="reviewsTotal" class="ml-1.5 px-2 py-0.5 text-xs rounded-full" :class="activeSection === 'reviews' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500'">{{ reviewsTotal }}</span>
+          </button>
+          <button
+            @click="activeSection = 'shelf'"
+            class="pb-3 text-sm font-medium border-b-2 transition-colors cursor-pointer"
+            :class="activeSection === 'shelf'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+          >
+            Полка книг
+            <span v-if="shelfTotal" class="ml-1.5 px-2 py-0.5 text-xs rounded-full" :class="activeSection === 'shelf' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500'">{{ shelfTotal }}</span>
+          </button>
+        </nav>
+      </div>
 
+      <!-- ===== Reviews Section ===== -->
+      <section v-if="activeSection === 'reviews'">
         <div v-if="reviews.length" class="space-y-4">
           <div v-for="review in reviews" :key="review.id">
             <RouterLink
@@ -220,6 +233,47 @@ onMounted(() => {
         <div class="mt-6">
           <Pagination v-model:page="reviewsPage" :total="reviewsTotal" :per-page="reviewsPerPage" />
         </div>
+      </section>
+
+      <!-- ===== Shelf Section ===== -->
+      <section v-if="activeSection === 'shelf'">
+        <!-- Shelf tabs -->
+        <div class="flex gap-2 mb-6">
+          <button
+            v-for="tab in shelfTabs"
+            :key="tab.key"
+            @click="changeShelfTab(tab.key)"
+            class="px-4 py-2 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+            :class="shelfTab === tab.key
+              ? 'bg-indigo-600 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="shelfLoading" class="flex justify-center py-10">
+          <div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+        </div>
+
+        <template v-else>
+          <div v-if="shelfBooks.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            <BookCard
+              v-for="book in shelfBooks"
+              :key="book.id"
+              :book="book"
+            />
+          </div>
+
+          <div v-else class="text-center py-10 text-gray-400 text-sm">
+            На этой полке пока нет книг
+          </div>
+
+          <div class="mt-6">
+            <Pagination v-model:page="shelfPage" :total="shelfTotal" :per-page="shelfPerPage" />
+          </div>
+        </template>
       </section>
     </template>
   </div>

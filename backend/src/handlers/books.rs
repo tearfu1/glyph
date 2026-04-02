@@ -66,9 +66,13 @@ pub async fn get_books(
 pub async fn get_book(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<BookWithAuthor>, AppError> {
+) -> Result<Json<BookWithTags>, AppError> {
     let book = book_service::get_book_by_id(&state.pool, id).await?;
-    Ok(Json(book))
+    let tags = tag_service::get_tags_for_books(&state.pool, &[book.id])
+        .await?
+        .remove(&book.id)
+        .unwrap_or_default();
+    Ok(Json(BookWithTags { book, tags }))
 }
 
 pub async fn add_book(
@@ -92,10 +96,21 @@ pub async fn get_shelf(
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
     Query(query): Query<ShelfQuery>,
-) -> Result<Json<PaginatedResponse<Book>>, AppError> {
+) -> Result<Json<PaginatedResponse<BookWithTags>>, AppError> {
     let page = query.page.unwrap_or(DEFAULT_PAGE);
-    let (data, total) =
+    let (books, total) =
         book_service::get_books_for_shelf(&state.pool, user_id, query.status, page).await?;
+
+    let book_ids: Vec<Uuid> = books.iter().map(|b| b.id).collect();
+    let mut tags_map = tag_service::get_tags_for_books(&state.pool, &book_ids).await?;
+
+    let data = books
+        .into_iter()
+        .map(|book| {
+            let tags = tags_map.remove(&book.id).unwrap_or_default();
+            BookWithTags { book, tags }
+        })
+        .collect();
 
     Ok(Json(PaginatedResponse {
         data,

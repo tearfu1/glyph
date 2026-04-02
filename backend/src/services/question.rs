@@ -42,9 +42,10 @@ pub async fn get_questions(
     pool: &PgPool,
     book_id: Uuid,
     page: i64,
+    per_page: i64,
     current_user_id: Option<Uuid>,
 ) -> Result<(Vec<QuestionWithUser>, i64), AppError> {
-    let offset = (page.max(1) - 1) * PAGE_SIZE;
+    let offset = (page.max(1) - 1) * per_page;
 
     let rows = match current_user_id {
         Some(uid) => {
@@ -53,7 +54,7 @@ pub async fn get_questions(
                 question_select(Some("$4"))
             ))
             .bind(book_id)
-            .bind(PAGE_SIZE)
+            .bind(per_page)
             .bind(offset)
             .bind(uid)
             .fetch_all(pool)
@@ -65,7 +66,7 @@ pub async fn get_questions(
                 question_select(None)
             ))
             .bind(book_id)
-            .bind(PAGE_SIZE)
+            .bind(per_page)
             .bind(offset)
             .fetch_all(pool)
             .await?

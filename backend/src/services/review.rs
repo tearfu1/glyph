@@ -4,15 +4,14 @@ use uuid::Uuid;
 use crate::errors::AppError;
 use crate::models::{CreateReview, Review, ReviewReaction, ReviewWithUser, UpdateReview};
 
-const PAGE_SIZE: i64 = 20;
-
 pub async fn get_reviews(
     pool: &PgPool,
     book_id: Uuid,
     page: i64,
+    per_page: i64,
     current_user_id: Option<Uuid>,
 ) -> Result<(Vec<ReviewWithUser>, i64), AppError> {
-    let offset = (page.max(1) - 1) * PAGE_SIZE;
+    let offset = (page.max(1) - 1) * per_page;
 
     let rows = match current_user_id {
         Some(uid) => {
@@ -33,7 +32,7 @@ pub async fn get_reviews(
                 "#,
             )
             .bind(book_id)
-            .bind(PAGE_SIZE)
+            .bind(per_page)
             .bind(uid)
             .bind(offset)
             .fetch_all(pool)
@@ -57,7 +56,7 @@ pub async fn get_reviews(
                 "#,
             )
             .bind(book_id)
-            .bind(PAGE_SIZE)
+            .bind(per_page)
             .bind(offset)
             .fetch_all(pool)
             .await?
