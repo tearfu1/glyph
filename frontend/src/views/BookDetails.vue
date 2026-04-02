@@ -10,7 +10,11 @@ import { getBook } from '@/api/books'
 import * as reviewsApi from '@/api/reviews'
 import * as questionsApi from '@/api/questions'
 import { getMyStatuses, setReadingStatus as apiSetReadingStatus } from '@/api/reading-status'
+import { useReactions } from '@/composables/useReactions'
 import Pagination from '@/components/Pagination.vue'
+import ReviewCard from '@/components/ReviewCard.vue'
+import StarRating from '@/components/StarRating.vue'
+import ReactionButtons from '@/components/ReactionButtons.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -73,6 +77,18 @@ const canAskQuestion = computed(() => {
   const role = auth.userRole
   return role === 'premium' || role === 'admin'
 })
+
+const { toggleReaction: onReviewReact } = useReactions(
+  reviewsApi.addReaction,
+  reviewsApi.removeReaction,
+  fetchReviews,
+)
+
+const { toggleReaction: onQuestionReact } = useReactions(
+  questionsApi.addReaction,
+  questionsApi.removeReaction,
+  fetchQuestions,
+)
 
 async function fetchBook() {
   loading.value = true
@@ -160,18 +176,6 @@ async function removeReview() {
   } catch {}
 }
 
-async function toggleReaction(review: ReviewWithUser, isLike: boolean) {
-  if (!auth.isAuthenticated) return
-  try {
-    if (review.user_reaction === isLike) {
-      await reviewsApi.removeReaction(review.id)
-    } else {
-      await reviewsApi.addReaction(review.id, isLike)
-    }
-    await fetchReviews()
-  } catch {}
-}
-
 async function fetchReadingStatus() {
   if (!auth.isAuthenticated) return
   try {
@@ -191,18 +195,6 @@ async function setStatus(status: ReadingStatusType) {
   } finally {
     statusLoading.value = false
   }
-}
-
-async function toggleQuestionReaction(question: QuestionWithUser, isLike: boolean) {
-  if (!auth.isAuthenticated) return
-  try {
-    if (question.user_reaction === isLike) {
-      await questionsApi.removeReaction(question.id)
-    } else {
-      await questionsApi.addReaction(question.id, isLike)
-    }
-    await fetchQuestions()
-  } catch {}
 }
 
 async function submitQuestion() {
@@ -300,7 +292,10 @@ onUnmounted(() => {
           <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">{{ book.title }}</h1>
 
           <!-- Author -->
-          <div class="mt-3 flex items-center gap-3">
+          <RouterLink
+            :to="{ name: 'user', params: { id: book.author_id } }"
+            class="mt-3 flex items-center gap-3 group"
+          >
             <img
               v-if="book.author_avatar_url"
               :src="book.author_avatar_url"
@@ -313,8 +308,8 @@ onUnmounted(() => {
             >
               {{ book.author_display_name?.charAt(0)?.toUpperCase() }}
             </div>
-            <span class="text-gray-700 font-medium">{{ book.author_display_name }}</span>
-          </div>
+            <span class="text-gray-700 font-medium group-hover:text-indigo-600 transition-colors">{{ book.author_display_name }}</span>
+          </RouterLink>
 
           <!-- Meta -->
           <div class="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-500">
@@ -423,19 +418,7 @@ onUnmounted(() => {
             <div class="flex items-start justify-between gap-4">
               <div>
                 <span class="text-xs font-semibold text-indigo-600 uppercase tracking-wide">Ваша рецензия</span>
-                <div class="flex gap-0.5 mt-1">
-                  <svg
-                    v-for="i in 5"
-                    :key="i"
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-5 h-5"
-                    :class="i <= myReview.rating ? 'text-amber-400' : 'text-gray-300'"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clip-rule="evenodd" />
-                  </svg>
-                </div>
+                <StarRating :model-value="myReview.rating" readonly size="md" />
               </div>
               <div class="flex gap-3 shrink-0">
                 <button @click="startEdit" class="text-sm text-gray-500 hover:text-indigo-600 transition-colors cursor-pointer">
@@ -462,24 +445,7 @@ onUnmounted(() => {
             <!-- Star picker -->
             <div class="flex items-center gap-3 mb-4">
               <span class="text-sm text-gray-600">Оценка:</span>
-              <div class="flex gap-1">
-                <button
-                  v-for="i in 5"
-                  :key="i"
-                  @click="reviewRating = i"
-                  class="cursor-pointer p-0.5 rounded hover:scale-110 transition-transform"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="w-7 h-7 transition-colors"
-                    :class="i <= reviewRating ? 'text-amber-400' : 'text-gray-300 hover:text-amber-200'"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clip-rule="evenodd" />
-                  </svg>
-                </button>
-              </div>
+              <StarRating v-model="reviewRating" size="lg" />
             </div>
 
             <textarea
@@ -509,71 +475,12 @@ onUnmounted(() => {
 
           <!-- Reviews list -->
           <div v-if="filteredReviews.length" class="space-y-4">
-            <div
+            <ReviewCard
               v-for="review in filteredReviews"
               :key="review.id"
-              class="p-5 bg-white border border-gray-200 rounded-xl"
-            >
-              <div class="flex items-start justify-between gap-4">
-                <div class="flex items-center gap-3">
-                  <img
-                    v-if="review.user_avatar_url"
-                    :src="review.user_avatar_url"
-                    :alt="review.user_display_name"
-                    class="w-8 h-8 rounded-full object-cover"
-                  />
-                  <div
-                    v-else
-                    class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-sm font-semibold"
-                  >
-                    {{ review.user_display_name?.charAt(0)?.toUpperCase() }}
-                  </div>
-                  <div>
-                    <span class="text-sm font-medium text-gray-900">{{ review.user_display_name }}</span>
-                    <div class="flex gap-0.5 mt-0.5">
-                      <svg
-                        v-for="i in 5"
-                        :key="i"
-                        xmlns="http://www.w3.org/2000/svg"
-                        class="w-3.5 h-3.5"
-                        :class="i <= review.rating ? 'text-amber-400' : 'text-gray-300'"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                      >
-                        <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clip-rule="evenodd" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-                <span class="text-xs text-gray-400 shrink-0">{{ formatDate(review.created_at) }}</span>
-              </div>
-
-              <p class="mt-3 text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ review.text }}</p>
-
-              <!-- Reactions -->
-              <div class="mt-3 flex items-center gap-4">
-                <button
-                  @click="toggleReaction(review, true)"
-                  class="inline-flex items-center gap-1.5 text-sm transition-colors cursor-pointer"
-                  :class="review.user_reaction === true ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-600'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-                  </svg>
-                  <span v-if="review.like_count">{{ review.like_count }}</span>
-                </button>
-                <button
-                  @click="toggleReaction(review, false)"
-                  class="inline-flex items-center gap-1.5 text-sm transition-colors cursor-pointer"
-                  :class="review.user_reaction === false ? 'text-red-500' : 'text-gray-400 hover:text-red-500'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v2a3.5 3.5 0 003.5 3.5h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-6h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
-                  </svg>
-                  <span v-if="review.dislike_count">{{ review.dislike_count }}</span>
-                </button>
-              </div>
-            </div>
+              :review="review"
+              @react="onReviewReact(review, $event)"
+            />
           </div>
 
           <div v-else-if="!loading" class="text-center py-10 text-gray-400 text-sm">
@@ -613,19 +520,26 @@ onUnmounted(() => {
             >
               <div class="flex items-start justify-between gap-4">
                 <div class="flex items-center gap-3">
-                  <img
-                    v-if="question.user_avatar_url"
-                    :src="question.user_avatar_url"
-                    :alt="question.user_display_name"
-                    class="w-8 h-8 rounded-full object-cover"
-                  />
-                  <div
-                    v-else
-                    class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-sm font-semibold"
+                  <RouterLink :to="{ name: 'user', params: { id: question.user_id } }" class="shrink-0">
+                    <img
+                      v-if="question.user_avatar_url"
+                      :src="question.user_avatar_url"
+                      :alt="question.user_display_name"
+                      class="w-8 h-8 rounded-full object-cover"
+                    />
+                    <div
+                      v-else
+                      class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-sm font-semibold"
+                    >
+                      {{ question.user_display_name?.charAt(0)?.toUpperCase() }}
+                    </div>
+                  </RouterLink>
+                  <RouterLink
+                    :to="{ name: 'user', params: { id: question.user_id } }"
+                    class="text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors"
                   >
-                    {{ question.user_display_name?.charAt(0)?.toUpperCase() }}
-                  </div>
-                  <span class="text-sm font-medium text-gray-900">{{ question.user_display_name }}</span>
+                    {{ question.user_display_name }}
+                  </RouterLink>
                   <span
                     v-if="question.has_answer"
                     class="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-50 text-emerald-700"
@@ -659,27 +573,13 @@ onUnmounted(() => {
                 <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ question.answer_text }}</p>
               </div>
 
-              <div class="mt-3 flex items-center gap-4">
-                <button
-                  @click="toggleQuestionReaction(question, true)"
-                  class="inline-flex items-center gap-1.5 text-sm transition-colors cursor-pointer"
-                  :class="question.user_reaction === true ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-600'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-                  </svg>
-                  <span v-if="question.like_count">{{ question.like_count }}</span>
-                </button>
-                <button
-                  @click="toggleQuestionReaction(question, false)"
-                  class="inline-flex items-center gap-1.5 text-sm transition-colors cursor-pointer"
-                  :class="question.user_reaction === false ? 'text-red-500' : 'text-gray-400 hover:text-red-500'"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v2a3.5 3.5 0 003.5 3.5h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-6h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
-                  </svg>
-                  <span v-if="question.dislike_count">{{ question.dislike_count }}</span>
-                </button>
+              <div class="mt-3">
+                <ReactionButtons
+                  :like-count="question.like_count"
+                  :dislike-count="question.dislike_count"
+                  :user-reaction="question.user_reaction"
+                  @react="onQuestionReact(question, $event)"
+                />
               </div>
             </div>
           </div>
