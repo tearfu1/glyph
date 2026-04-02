@@ -7,7 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::auth::middleware::AuthUser;
+use crate::auth::middleware::{AuthUser, OptionalAuthUser};
 use crate::errors::AppError;
 use crate::handlers::PaginatedResponse;
 use crate::models::{CreateReview, Review, ReviewReaction, ReviewWithUser, UpdateReview};
@@ -30,9 +30,10 @@ pub async fn get_reviews(
     State(state): State<AppState>,
     Path((book_id,)): Path<(Uuid,)>,
     Query(query): Query<PageQuery>,
+    auth: OptionalAuthUser,
 ) -> Result<Json<PaginatedResponse<ReviewWithUser>>, AppError> {
     let page = query.page.unwrap_or(DEFAULT_PAGE);
-    let current_user_id: Option<Uuid> = None;
+    let current_user_id = auth.0.map(|c| c.sub);
     let (data, total) =
         review_service::get_reviews(&state.pool, book_id, page, current_user_id).await?;
 

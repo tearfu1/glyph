@@ -6,13 +6,26 @@ use crate::models::{CreateQuestion, Question, QuestionWithUser};
 
 const PAGE_SIZE: i64 = 20;
 
-const QUESTION_WITH_USER_SELECT: &str = r#"
-    SELECT q.id, q.book_id, q.user_id, q.text, q.created_at, q.updated_at,
+/// Build the common SELECT for questions with user info.
+/// `user_id_param` — SQL bind placeholder for current user, e.g. `Some("$4")`.
+/// When `None`, `user_reaction` is always NULL.
+fn question_select(user_id_param: Option<&str>) -> String {
+    let user_reaction = match user_id_param {
+        Some(p) => format!(
+            "(SELECT is_like FROM up_question_reaction WHERE question_id = q.id AND user_id = {}) AS user_reaction",
+            p
+        ),
+        None => "NULL::boolean AS user_reaction".to_string(),
+    };
+
+    format!(
+        r#"SELECT q.id, q.book_id, q.user_id, q.text, q.created_at, q.updated_at,
         u.login AS user_login,
         u.display_name AS user_display_name,
         u.avatar_url AS user_avatar_url,
         COALESCE((SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true), 0) AS like_count,
         COALESCE((SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = false), 0) AS dislike_count,
+        {user_reaction},
         EXISTS(SELECT 1 FROM up_answer WHERE question_id = q.id) AS has_answer,
         a.text AS answer_text,
         a.created_at AS answer_created_at,
@@ -21,25 +34,43 @@ const QUESTION_WITH_USER_SELECT: &str = r#"
     FROM up_question q
     JOIN up_user u ON u.id = q.user_id
     LEFT JOIN up_answer a ON a.question_id = q.id
-    LEFT JOIN up_user au ON au.id = a.user_id
-"#;
+    LEFT JOIN up_user au ON au.id = a.user_id"#
+    )
+}
 
 pub async fn get_questions(
     pool: &PgPool,
     book_id: Uuid,
     page: i64,
+    current_user_id: Option<Uuid>,
 ) -> Result<(Vec<QuestionWithUser>, i64), AppError> {
     let offset = (page.max(1) - 1) * PAGE_SIZE;
 
-    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
-        "{} WHERE q.book_id = $1 ORDER BY q.created_at DESC LIMIT $2 OFFSET $3",
-        QUESTION_WITH_USER_SELECT
-    ))
-    .bind(book_id)
-    .bind(PAGE_SIZE)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
+    let rows = match current_user_id {
+        Some(uid) => {
+            sqlx::query_as::<_, QuestionWithUser>(&format!(
+                "{} WHERE q.book_id = $1 ORDER BY q.created_at DESC LIMIT $2 OFFSET $3",
+                question_select(Some("$4"))
+            ))
+            .bind(book_id)
+            .bind(PAGE_SIZE)
+            .bind(offset)
+            .bind(uid)
+            .fetch_all(pool)
+            .await?
+        }
+        None => {
+            sqlx::query_as::<_, QuestionWithUser>(&format!(
+                "{} WHERE q.book_id = $1 ORDER BY q.created_at DESC LIMIT $2 OFFSET $3",
+                question_select(None)
+            ))
+            .bind(book_id)
+            .bind(PAGE_SIZE)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
+        }
+    };
 
     let total = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM up_question WHERE book_id = $1",
@@ -58,7 +89,7 @@ pub async fn get_my_questions_for_book(
 ) -> Result<Vec<QuestionWithUser>, AppError> {
     let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
         "{} WHERE q.book_id = $1 AND q.user_id = $2 ORDER BY q.created_at DESC",
-        QUESTION_WITH_USER_SELECT
+        question_select(Some("$2"))
     ))
     .bind(book_id)
     .bind(user_id)
@@ -71,18 +102,37 @@ pub async fn get_my_questions_for_book(
 pub async fn get_best_questions(
     pool: &PgPool,
     book_id: Uuid,
+    current_user_id: Option<Uuid>,
 ) -> Result<Vec<QuestionWithUser>, AppError> {
-    let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
-        r#"{} WHERE q.book_id = $1
-        ORDER BY (
-            SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true
-        ) DESC
-        LIMIT 5"#,
-        QUESTION_WITH_USER_SELECT
-    ))
-    .bind(book_id)
-    .fetch_all(pool)
-    .await?;
+    let rows = match current_user_id {
+        Some(uid) => {
+            sqlx::query_as::<_, QuestionWithUser>(&format!(
+                r#"{} WHERE q.book_id = $1
+                ORDER BY (
+                    SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true
+                ) DESC
+                LIMIT 5"#,
+                question_select(Some("$2"))
+            ))
+            .bind(book_id)
+            .bind(uid)
+            .fetch_all(pool)
+            .await?
+        }
+        None => {
+            sqlx::query_as::<_, QuestionWithUser>(&format!(
+                r#"{} WHERE q.book_id = $1
+                ORDER BY (
+                    SELECT COUNT(*) FROM up_question_reaction WHERE question_id = q.id AND is_like = true
+                ) DESC
+                LIMIT 5"#,
+                question_select(None)
+            ))
+            .bind(book_id)
+            .fetch_all(pool)
+            .await?
+        }
+    };
 
     Ok(rows)
 }
@@ -225,7 +275,7 @@ pub async fn get_incoming_questions(
         WHERE b.author_id = $1
           AND NOT EXISTS (SELECT 1 FROM up_answer WHERE question_id = q.id)
         ORDER BY q.created_at DESC LIMIT $2 OFFSET $3"#,
-        QUESTION_WITH_USER_SELECT
+        question_select(Some("$1"))
     ))
     .bind(author_id)
     .bind(PAGE_SIZE)
@@ -260,7 +310,7 @@ pub async fn get_answered_questions(
         WHERE b.author_id = $1
           AND EXISTS (SELECT 1 FROM up_answer WHERE question_id = q.id)
         ORDER BY q.created_at DESC LIMIT $2 OFFSET $3"#,
-        QUESTION_WITH_USER_SELECT
+        question_select(Some("$1"))
     ))
     .bind(author_id)
     .bind(PAGE_SIZE)
@@ -292,7 +342,7 @@ pub async fn get_my_questions(
 
     let rows = sqlx::query_as::<_, QuestionWithUser>(&format!(
         "{} WHERE q.user_id = $1 ORDER BY q.created_at DESC LIMIT $2 OFFSET $3",
-        QUESTION_WITH_USER_SELECT
+        question_select(Some("$1"))
     ))
     .bind(user_id)
     .bind(PAGE_SIZE)

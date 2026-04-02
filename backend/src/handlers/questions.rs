@@ -7,7 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::auth::middleware::AuthUser;
+use crate::auth::middleware::{AuthUser, OptionalAuthUser};
 use crate::errors::AppError;
 use crate::handlers::PaginatedResponse;
 use crate::models::{CreateQuestion, Question, QuestionWithUser, UserRole};
@@ -30,9 +30,11 @@ pub async fn get_questions(
     State(state): State<AppState>,
     Path(book_id): Path<Uuid>,
     Query(query): Query<PageQuery>,
+    auth: OptionalAuthUser,
 ) -> Result<Json<PaginatedResponse<QuestionWithUser>>, AppError> {
     let page = query.page.unwrap_or(DEFAULT_PAGE);
-    let (data, total) = question_service::get_questions(&state.pool, book_id, page).await?;
+    let current_user_id = auth.0.map(|c| c.sub);
+    let (data, total) = question_service::get_questions(&state.pool, book_id, page, current_user_id).await?;
 
     Ok(Json(PaginatedResponse {
         data,
@@ -55,8 +57,10 @@ pub async fn get_my_questions_for_book(
 pub async fn get_best_questions(
     State(state): State<AppState>,
     Path(book_id): Path<Uuid>,
+    auth: OptionalAuthUser,
 ) -> Result<Json<Vec<QuestionWithUser>>, AppError> {
-    let data = question_service::get_best_questions(&state.pool, book_id).await?;
+    let current_user_id = auth.0.map(|c| c.sub);
+    let data = question_service::get_best_questions(&state.pool, book_id, current_user_id).await?;
     Ok(Json(data))
 }
 
