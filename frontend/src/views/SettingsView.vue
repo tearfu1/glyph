@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { getMySettings, updateMe } from '@/api/users'
+import ImageUpload from '@/components/ImageUpload.vue'
 
 const auth = useAuthStore()
 
@@ -68,19 +69,10 @@ onMounted(fetchSettings)
     </div>
 
     <form v-else @submit.prevent="save" class="space-y-6">
-      <!-- Avatar preview -->
+      <!-- User info -->
       <div class="flex items-center gap-6">
-        <img
-          v-if="avatarUrl"
-          :src="avatarUrl"
-          alt="Аватар"
-          class="w-16 h-16 rounded-full object-cover shadow-md"
-        />
-        <div
-          v-else
-          class="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xl font-bold shadow-md"
-        >
-          {{ displayName?.charAt(0)?.toUpperCase() }}
+        <div class="w-32">
+          <ImageUpload v-model="avatarUrl" aspect="square" />
         </div>
         <div class="text-sm text-gray-500">
           <p class="font-medium text-gray-900">{{ auth.user?.login }}</p>
@@ -102,21 +94,6 @@ onMounted(fetchSettings)
           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           placeholder="Ваше имя"
         />
-      </div>
-
-      <!-- Avatar URL -->
-      <div>
-        <label for="avatarUrl" class="block text-sm font-medium text-gray-700 mb-1">
-          URL аватара
-        </label>
-        <input
-          id="avatarUrl"
-          v-model="avatarUrl"
-          type="url"
-          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          placeholder="https://example.com/avatar.jpg"
-        />
-        <p class="mt-1 text-xs text-gray-400">Прямая ссылка на изображение</p>
       </div>
 
       <!-- Messages -->

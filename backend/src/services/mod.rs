@@ -5,3 +5,4 @@ pub mod user;
 pub mod review;
 pub mod question;
 pub mod answer;
+pub mod ai_answer;

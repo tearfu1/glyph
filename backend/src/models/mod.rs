@@ -4,6 +4,7 @@ pub mod tag;
 pub mod review;
 pub mod question;
 pub mod answer;
+pub mod ai_answer;
 pub mod image;
 pub mod reading_status;
 
@@ -13,5 +14,6 @@ pub use tag::*;
 pub use review::*;
 pub use question::*;
 pub use answer::*;
+pub use ai_answer::*;
 pub use image::*;
 pub use reading_status::*;

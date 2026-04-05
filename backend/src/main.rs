@@ -11,6 +11,7 @@ use std::sync::Arc;
 use axum::{extract::FromRef, routing::{delete, get, post, put}, Extension, Router};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -76,7 +77,7 @@ async fn main() {
 
     let book_routes = Router::new()
         .route("/", get(handlers::books::get_books).post(handlers::books::add_book))
-        .route("/{id}", get(handlers::books::get_book))
+        .route("/{id}", get(handlers::books::get_book).put(handlers::books::update_book))
         .route("/shelf/{userId}", get(handlers::books::get_shelf))
         .route("/author/{authorId}", get(handlers::books::get_by_author))
         .route("/{bookId}/reviews", get(handlers::reviews::get_reviews).post(handlers::reviews::create_review))
@@ -94,6 +95,7 @@ async fn main() {
         .route("/{id}", put(handlers::questions::update_question).delete(handlers::questions::delete_question))
         .route("/{id}/reaction", post(handlers::questions::add_reaction).delete(handlers::questions::remove_reaction))
         .route("/{id}/answer", post(handlers::answers::create_answer))
+        .route("/{id}/ai-answer", post(handlers::ai_answers::generate_ai_answer).get(handlers::ai_answers::get_ai_answer))
         .route("/incoming", get(handlers::questions::get_incoming_questions))
         .route("/answered", get(handlers::questions::get_answered_questions))
         .route("/my", get(handlers::questions::get_my_questions));
@@ -109,6 +111,8 @@ async fn main() {
         .route("/groups", get(handlers::users::get_all_groups))
         .route("/users/{id}/groups", put(handlers::users::update_user_groups));
 
+    let upload_dir = state.config.upload_dir.clone();
+
     let app = Router::new()
         .nest("/api/auth", auth_routes)
         .nest("/api/books", book_routes)
@@ -119,6 +123,8 @@ async fn main() {
         .route("/api/reading-statuses/my", get(handlers::reading_status::get_my_statuses))
         .nest("/api/users", user_routes)
         .nest("/api/admin", admin_routes)
+        .route("/api/images/upload", post(handlers::images::upload_image))
+        .nest_service("/uploads", ServeDir::new(&upload_dir))
         .layer(Extension(state.config.clone()))
         .layer(cors)
         .layer(TraceLayer::new_for_http())

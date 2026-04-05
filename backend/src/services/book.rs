@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;
-use crate::models::{Book, BookWithAuthor, CreateBook, ReadingStatusType};
+use crate::models::{Book, BookWithAuthor, CreateBook, ReadingStatusType, UpdateBook};
 
 const PAGE_SIZE: i64 = 10;
 
@@ -217,6 +217,37 @@ pub async fn create_book(
     .bind(author_id)
     .fetch_one(pool)
     .await?;
+
+    Ok(book)
+}
+
+pub async fn update_book(
+    pool: &PgPool,
+    id: Uuid,
+    input: UpdateBook,
+) -> Result<Book, AppError> {
+    let book = sqlx::query_as::<_, Book>(
+        r#"
+        UPDATE up_book SET
+            title = COALESCE($2, title),
+            description = COALESCE($3, description),
+            cover_url = COALESCE($4, cover_url),
+            isbn = COALESCE($5, isbn),
+            published_year = COALESCE($6, published_year),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(&input.title)
+    .bind(&input.description)
+    .bind(&input.cover_url)
+    .bind(&input.isbn)
+    .bind(input.published_year)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Book {} not found", id)))?;
 
     Ok(book)
 }

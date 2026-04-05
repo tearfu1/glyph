@@ -16,5 +16,6 @@ COPY --from=builder /app/target/release/glyph-backend /usr/local/bin/glyph-backe
 COPY --from=builder /app/migrations /app/migrations
 
 WORKDIR /app
+RUN mkdir -p /app/uploads
 EXPOSE 3000
 CMD ["glyph-backend"]

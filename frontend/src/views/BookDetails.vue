@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { BookWithAuthor } from '@/types/book'
 import type { ReviewWithUser } from '@/types/review'
 import type { ReadingStatusType } from '@/types/reading-status'
-import { getBook } from '@/api/books'
+import type { AiAnswer } from '@/types/ai-answer'
+import { getBook, updateBook } from '@/api/books'
+import { uploadImage } from '@/api/images'
 import * as reviewsApi from '@/api/reviews'
 import * as questionsApi from '@/api/questions'
+import * as aiAnswersApi from '@/api/ai-answers'
 import { getMyStatuses, setReadingStatus as apiSetReadingStatus } from '@/api/reading-status'
 import { useReactions } from '@/composables/useReactions'
 import { usePagination } from '@/composables/usePagination'
 import Pagination from '@/components/Pagination.vue'
 import ReviewCard from '@/components/ReviewCard.vue'
 import QuestionCard from '@/components/QuestionCard.vue'
+import AiAnswerCard from '@/components/AiAnswerCard.vue'
 import StarRating from '@/components/StarRating.vue'
 
 const route = useRoute()
@@ -60,6 +64,61 @@ const {
 
 const questionText = ref('')
 const questionSubmitting = ref(false)
+
+// AI answers
+const aiAnswers = ref<Record<string, AiAnswer>>({})
+const aiAnswerLoading = ref<Record<string, boolean>>({})
+
+const canGenerateAi = computed(() => {
+  if (!auth.user || !book.value) return false
+  return auth.user.id === book.value.author_id || auth.userRole === 'admin'
+})
+
+async function handleGenerateAiAnswer(questionId: string) {
+  aiAnswerLoading.value[questionId] = true
+  try {
+    const { data } = await aiAnswersApi.generateAiAnswer(questionId)
+    aiAnswers.value[questionId] = data
+  } catch {
+  } finally {
+    aiAnswerLoading.value[questionId] = false
+  }
+}
+
+async function fetchAiAnswers() {
+  for (const question of questions.value) {
+    try {
+      const { data } = await aiAnswersApi.getAiAnswer(question.id)
+      aiAnswers.value[question.id] = data
+    } catch {
+      // No AI answer exists yet — that's fine
+    }
+  }
+}
+
+// Cover upload
+const coverUploading = ref(false)
+
+const canEditBook = computed(() => {
+  if (!auth.user || !book.value) return false
+  return auth.user.id === book.value.author_id || auth.userRole === 'admin'
+})
+
+async function handleCoverUpload(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !book.value) return
+  coverUploading.value = true
+  try {
+    const { data: img } = await uploadImage(file)
+    await updateBook(book.value.id, { cover_url: img.url })
+    book.value.cover_url = img.url
+  } catch {
+  } finally {
+    coverUploading.value = false
+    input.value = ''
+  }
+}
 
 const tagColors: Record<string, string> = {
   genre: 'bg-indigo-50 text-indigo-700',
@@ -194,6 +253,7 @@ async function submitQuestion() {
     await questionsApi.createQuestion(bookId.value, questionText.value)
     questionText.value = ''
     await fetchQuestions()
+    await fetchAiAnswers()
   } catch {
   } finally {
     questionSubmitting.value = false
@@ -214,10 +274,11 @@ function closeStatusMenu(e: MouseEvent) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchBook()
   fetchReviews()
-  fetchQuestions()
+  await fetchQuestions()
+  await fetchAiAnswers()
   if (auth.isAuthenticated) {
     fetchMyReview()
     fetchReadingStatus()
@@ -258,7 +319,7 @@ onUnmounted(() => {
       <div class="flex flex-col sm:flex-row gap-8">
         <!-- Cover -->
         <div class="w-48 sm:w-56 shrink-0 mx-auto sm:mx-0">
-          <div class="aspect-[2/3] bg-gray-100 rounded-xl overflow-hidden shadow-md">
+          <div class="relative aspect-[2/3] bg-gray-100 rounded-xl overflow-hidden shadow-md group">
             <img
               v-if="book.cover_url"
               :src="book.cover_url"
@@ -271,6 +332,29 @@ onUnmounted(() => {
                   d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
             </div>
+
+            <!-- Upload overlay for author/admin -->
+            <label
+              v-if="canEditBook"
+              class="absolute inset-0 flex flex-col items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors cursor-pointer"
+            >
+              <div class="opacity-0 group-hover:opacity-100 transition-opacity text-white text-center">
+                <div v-if="coverUploading" class="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
+                <template v-else>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                  <span class="text-xs font-medium">Загрузить обложку</span>
+                </template>
+              </div>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                class="hidden"
+                :disabled="coverUploading"
+                @change="handleCoverUpload"
+              />
+            </label>
           </div>
         </div>
 
@@ -500,12 +584,18 @@ onUnmounted(() => {
 
           <!-- Questions list -->
           <div v-if="questions.length" class="space-y-4">
-            <QuestionCard
-              v-for="question in questions"
-              :key="question.id"
-              :question="question"
-              @react="onQuestionReact(question, $event)"
-            />
+            <div v-for="question in questions" :key="question.id">
+              <QuestionCard
+                :question="question"
+                @react="onQuestionReact(question, $event)"
+              />
+              <AiAnswerCard
+                :answer="aiAnswers[question.id] ?? null"
+                :loading="!!aiAnswerLoading[question.id]"
+                :can-generate="canGenerateAi && !aiAnswers[question.id]"
+                @generate="handleGenerateAiAnswer(question.id)"
+              />
+            </div>
           </div>
 
           <div v-else-if="!loading" class="text-center py-10 text-gray-400 text-sm">

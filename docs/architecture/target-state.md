@@ -36,6 +36,7 @@
 | Валидация | **validator** crate | Декларативная валидация struct'ов |
 | Сериализация | **serde** | JSON serialization/deserialization |
 | Изображения | **image** crate | Ресайз без внешних зависимостей |
+| HTTP-клиент | **reqwest** (rustls-tls) | Вызов ML-сервиса |
 | Конфигурация | **.env + dotenvy** | Переменные окружения |
 
 ### Структура проекта
@@ -51,7 +52,8 @@ backend/
 │   ├── 004_reviews.sql
 │   ├── 005_questions.sql
 │   ├── 006_images.sql
-│   └── 007_reading_status.sql
+│   ├── 007_reading_status.sql
+│   └── 008_ai_answers.sql
 ├── src/
 │   ├── main.rs              # Axum server, router, middleware stack
 │   ├── config.rs            # Env config struct
@@ -72,7 +74,7 @@ backend/
 │   │   ├── tags.rs          # get_grouped_by_type
 │   │   ├── reading_status.rs # list, change
 │   │   ├── images.rs        # upload + resize
-│   │   └── ai.rs            # генерация ответа в стиле автора
+│   │   └── ai_answers.rs   # генерация и получение AI-ответа в стиле автора
 │   ├── models/
 │   │   ├── mod.rs
 │   │   ├── user.rs
@@ -82,7 +84,8 @@ backend/
 │   │   ├── answer.rs
 │   │   ├── tag.rs
 │   │   ├── image.rs
-│   │   └── reading_status.rs
+│   │   ├── reading_status.rs
+│   │   └── ai_answer.rs
 │   ├── services/
 │   │   ├── mod.rs
 │   │   ├── auth.rs
@@ -93,7 +96,8 @@ backend/
 │   │   ├── user.rs
 │   │   ├── tag.rs
 │   │   ├── reading_status.rs
-│   │   └── image.rs
+│   │   ├── image.rs
+│   │   └── ai_answer.rs    # HTTP-клиент к ML-сервису (reqwest)
 │   └── validation/
 │       ├── mod.rs
 │       ├── book.rs
@@ -135,7 +139,8 @@ GET    /api/questions/answered?page=         # [author]
 GET    /api/questions/my?page=
 
 POST   /api/questions/:id/answer             # [author]
-POST   /api/questions/:id/ai-answer          # NEW: AI ответ в стиле автора
+GET    /api/questions/:id/ai-answer          # AI-ответ (публичный)
+POST   /api/questions/:id/ai-answer          # генерация AI-ответа [author, admin]
 
 GET    /api/tags?skip_types[]=
 
@@ -168,7 +173,7 @@ PUT    /api/admin/users/:id/groups           # [admin]
 | Убираем `up_title_author_search` | PostgreSQL `tsvector` вместо отдельной таблицы |
 | Фиксим `up_user_image` → user reference на UserTable | Баг в оригинале |
 | Добавляем `up_author_corpus` | Связь автор → корпус текстов для ML |
-| Добавляем `up_ai_answer` | AI-сгенерированные ответы (отдельно от человеческих) |
+| Добавляем `up_ai_answer` | AI-сгенерированные ответы: UUID PK, UNIQUE question_id FK, answer_text, sources (JSONB), created_at |
 
 ---
 
@@ -238,13 +243,13 @@ frontend/
 │   │   ├── questions.ts
 │   │   ├── users.ts
 │   │   ├── tags.ts
-│   │   └── ai.ts              # NEW: AI-генерация
+│   │   └── ai-answers.ts     # GET/POST AI-ответов
 │   └── types/
 │       ├── book.ts
 │       ├── review.ts
 │       ├── question.ts
 │       ├── user.ts
-│       └── ai.ts
+│       └── ai-answer.ts      # AiAnswer, AiAnswerSource
 ```
 
 ### Маршруты Vue Router

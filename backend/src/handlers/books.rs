@@ -10,7 +10,7 @@ use validator::Validate;
 use crate::auth::middleware::AuthUser;
 use crate::errors::AppError;
 use crate::handlers::PaginatedResponse;
-use crate::models::{Book, BookQuery, BookWithAuthor, CreateBook, ReadingStatusType, Tag, UserRole};
+use crate::models::{Book, BookQuery, BookWithAuthor, CreateBook, ReadingStatusType, Tag, UpdateBook, UserRole};
 use crate::services::book as book_service;
 use crate::services::tag as tag_service;
 use crate::AppState;
@@ -90,6 +90,26 @@ pub async fn add_book(
 
     let book = book_service::create_book(&state.pool, auth.0.sub, input).await?;
     Ok((StatusCode::CREATED, Json(book)))
+}
+
+pub async fn update_book(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateBook>,
+) -> Result<Json<Book>, AppError> {
+    let book = book_service::get_book_by_id(&state.pool, id).await?;
+
+    if book.author_id != auth.0.sub && auth.0.role != UserRole::Admin {
+        return Err(AppError::Forbidden);
+    }
+
+    input
+        .validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let updated = book_service::update_book(&state.pool, id, input).await?;
+    Ok(Json(updated))
 }
 
 pub async fn get_shelf(

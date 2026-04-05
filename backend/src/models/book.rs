@@ -61,6 +61,16 @@ pub struct BookWithAuthor {
     pub author_avatar_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateBook {
+    #[validate(length(min = 1, max = 512))]
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub cover_url: Option<String>,
+    pub isbn: Option<String>,
+    pub published_year: Option<i16>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BookQuery {
     pub page: Option<i64>,

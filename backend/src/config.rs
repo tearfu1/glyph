@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub server_host: String,
     pub server_port: u16,
     pub ml_service_url: String,
+    pub upload_dir: String,
 }
 
 impl AppConfig {
@@ -33,6 +34,8 @@ impl AppConfig {
                 .expect("SERVER_PORT must be a number"),
             ml_service_url: env::var("ML_SERVICE_URL")
                 .unwrap_or_else(|_| "http://localhost:8001".to_string()),
+            upload_dir: env::var("UPLOAD_DIR")
+                .unwrap_or_else(|_| "./uploads".to_string()),
         })
     }
 }

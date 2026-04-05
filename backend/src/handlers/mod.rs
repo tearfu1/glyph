@@ -5,6 +5,8 @@ pub mod users;
 pub mod reviews;
 pub mod questions;
 pub mod answers;
+pub mod ai_answers;
+pub mod images;
 
 use serde::Serialize;
 
