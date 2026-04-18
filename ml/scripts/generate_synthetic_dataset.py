@@ -319,17 +319,37 @@ def main():
 
     logger.info("Нужно сгенерировать: %d пар", len(chunks))
 
+    # Smoke-тест: первый запрос ошибается → сразу падаем (auth/quota проблемы)
+    logger.info("Проверка API ключа одним тестовым запросом...")
+    probe = generate_pair(chunks[0], args.author, provider_fn, model)
+    if probe is None:
+        logger.error("Тестовый запрос провалился. Проверь API ключ / квоту провайдера.")
+        sys.exit(1)
+    logger.info("API работает. Пример: Q=%r  A=%r", probe["question"][:80], probe["answer"][:100])
+
     sleep_between = max(60.0 / args.rpm, 0.0)
     written = 0
+    consecutive_fails = 0
     t_start = time.time()
 
     with open(output_path, "a", encoding="utf-8") as out:
-        for i, chunk in enumerate(chunks, 1):
+        # Записываем probe
+        out.write(json.dumps(probe, ensure_ascii=False) + "\n")
+        out.flush()
+        written += 1
+
+        for i, chunk in enumerate(chunks[1:], 2):
             record = generate_pair(chunk, args.author, provider_fn, model)
             if record is not None:
                 out.write(json.dumps(record, ensure_ascii=False) + "\n")
                 out.flush()
                 written += 1
+                consecutive_fails = 0
+            else:
+                consecutive_fails += 1
+                if consecutive_fails >= 10:
+                    logger.error("10 подряд неудач — останавливаюсь. Проверь ключ/квоту.")
+                    sys.exit(1)
 
             if i % 25 == 0:
                 elapsed = time.time() - t_start
