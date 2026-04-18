@@ -1,0 +1,13 @@
+author,condition,semantic_similarity,n
+dostoevsky,rag_only,0.8323270938406118,10
+dostoevsky,rag_lora_r4,0.8263903376522798,10
+dostoevsky,rag_lora_r8,0.8328365553548271,10
+dostoevsky,rag_lora_r16,0.8361425462490122,10
+chekhov,rag_only,0.8226499010674063,10
+chekhov,rag_lora_r4,0.818534125890247,10
+chekhov,rag_lora_r8,0.8222487855252216,10
+chekhov,rag_lora_r16,0.8260636632436332,10
+bulgakov,rag_only,0.8095947816642616,10
+bulgakov,rag_lora_r4,0.8149623198342558,10
+bulgakov,rag_lora_r8,0.8117739573566787,10
+bulgakov,rag_lora_r16,0.814400186040095,10

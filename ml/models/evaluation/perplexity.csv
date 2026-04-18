@@ -1,0 +1,16 @@
+author,model,perplexity
+dostoevsky,baseline,32.964221567379695
+dostoevsky,E1_default,29.19665402825826
+dostoevsky,E2_low_rank,29.64907083009193
+dostoevsky,E3_high_rank,28.677864518779735
+dostoevsky,E4_long_train,29.205049945499812
+chekhov,baseline,27.182699379613243
+chekhov,E1_default,23.705842983190507
+chekhov,E2_low_rank,24.12058668116374
+chekhov,E3_high_rank,23.25594856939102
+chekhov,E4_long_train,23.720344645776812
+bulgakov,baseline,29.986970911816144
+bulgakov,E1_default,27.557842137015058
+bulgakov,E2_low_rank,27.84566111997542
+bulgakov,E3_high_rank,27.180720735339033
+bulgakov,E4_long_train,27.527199757946306
