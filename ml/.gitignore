@@ -9,6 +9,7 @@ __pycache__/
 data/*
 !data/processed/
 !data/retrieval_cache.json
+!data/synthetic/
 
 # models/: по умолчанию игнорируем, но разрешаем адаптеры и eval-результаты
 models/*

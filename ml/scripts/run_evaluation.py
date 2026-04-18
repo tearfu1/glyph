@@ -52,14 +52,15 @@ PROCESSED_DIR = BASE_DIR / "data" / "processed"
 ADAPTERS_DIR = BASE_DIR / "models" / "adapters"
 RESULTS_DIR = BASE_DIR / "models" / "evaluation"
 
-EXPERIMENTS = ["E1_default", "E2_low_rank", "E3_high_rank", "E4_long_train"]
+EXPERIMENTS = ["E1_default", "E2_low_rank", "E3_high_rank", "E4_long_train", "E5_instruct"]
 
 CONDITIONS = [
-    ("baseline",     None,              False),
-    ("rag_only",     None,              True),
-    ("rag_lora_r4",  "E2_low_rank",     True),
-    ("rag_lora_r8",  "E1_default",      True),
-    ("rag_lora_r16", "E3_high_rank",    True),
+    ("baseline",          None,              False),
+    ("rag_only",          None,              True),
+    ("rag_lora_r4",       "E2_low_rank",     True),
+    ("rag_lora_r8",       "E1_default",      True),
+    ("rag_lora_r16",      "E3_high_rank",    True),
+    ("rag_lora_instruct", "E5_instruct",     True),
 ]
 
 AUTHORS = list(EVAL_QUESTIONS.keys())
@@ -119,15 +120,26 @@ def run_perplexity(authors: list[str], device: str) -> list[dict]:
     return records
 
 
+PROMPT_WITH_CONTEXT = (
+    "Ты — литературный критик, отвечающий строго на основе приведённых фрагментов.\n"
+    "Если в фрагментах нет прямого ответа — скажи, что в контексте ответа нет.\n"
+    "Не придумывай факты, имена, даты, не относящиеся к фрагментам.\n\n"
+    "Фрагменты из произведений автора:\n{context}\n\n"
+    "Вопрос читателя: {question}\n\n"
+    "Краткий ответ (один абзац) в стиле автора, опираясь ТОЛЬКО на фрагменты выше:"
+)
+PROMPT_NO_CONTEXT = (
+    "Ты — литературный критик. Ответь на вопрос читателя коротко и по существу.\n\n"
+    "Вопрос: {question}\n\n"
+    "Краткий ответ (один абзац) в стиле автора:"
+)
+
+
 def _build_prompt(question: str, context_chunks: list[str] | None) -> str:
     if context_chunks:
         ctx = "\n\n".join(context_chunks)
-        return (
-            f"Контекст из произведений автора:\n{ctx}\n\n"
-            f"Вопрос читателя: {question}\n\n"
-            f"Ответ в стиле автора:"
-        )
-    return f"Вопрос читателя: {question}\n\nОтвет в стиле автора:"
+        return PROMPT_WITH_CONTEXT.format(context=ctx, question=question)
+    return PROMPT_NO_CONTEXT.format(question=question)
 
 
 def _generate(model, tokenizer, prompt: str, device: str) -> str:
@@ -135,10 +147,12 @@ def _generate(model, tokenizer, prompt: str, device: str) -> str:
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=256,
-            temperature=0.8,
-            top_p=0.9,
-            repetition_penalty=1.2,
+            max_new_tokens=200,
+            temperature=0.3,
+            top_p=0.7,
+            top_k=40,
+            repetition_penalty=1.4,
+            no_repeat_ngram_size=3,
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
         )
