@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+.ipynb_checkpoints/
+.venv/
+
+# data/: по умолчанию игнорируем содержимое, но разрешаем нужное для Colab
+data/*
+!data/processed/
+!data/retrieval_cache.json
+
+# models/: по умолчанию игнорируем, но разрешаем адаптеры и eval-результаты
+models/*
+!models/adapters/
+!models/evaluation/
+
+# Trainer-мусор внутри адаптеров в git не нужен (200 MB лишних)
+models/adapters/**/checkpoint-*/
+models/adapters/**/runs/
+models/adapters/**/logs/
+models/adapters/**/trainer_state.json
+models/adapters/**/optimizer.pt
+models/adapters/**/scheduler.pt
+models/adapters/**/training_args.bin

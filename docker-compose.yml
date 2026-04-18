@@ -49,13 +49,18 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
       MODEL_PATH: /app/models
+      HF_HOME: /app/.hf_cache
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+      HF_HUB_DISABLE_XET: "1"
     depends_on:
       - qdrant
     volumes:
       - ./ml/models:/app/models
       - ./ml/data:/app/data
+      - hf_cache:/app/.hf_cache
 
 volumes:
   pgdata:
   qdrant_data:
   uploads:
+  hf_cache:
