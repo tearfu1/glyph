@@ -39,8 +39,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CHUNKS_DIR = BASE_DIR / "data" / "chunks"
+PROCESSED_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_DIR = BASE_DIR / "data" / "synthetic"
+
+# Размер нарезки processed-текста на куски для подачи в LLM.
+# Не совпадает с чанками для RAG (256 токенов) — здесь нужны более крупные
+# семантически целостные фрагменты для осмысленных Q&A пар.
+CHUNK_CHAR_SIZE = 1500
 
 AUTHOR_NAMES_RU = {
     "dostoevsky": "Фёдор Михайлович Достоевский",
@@ -159,19 +164,36 @@ DEFAULT_MODELS = {
 # ---------- Core logic ----------
 
 def load_chunks(author: str) -> list[dict]:
-    """Загружает все чанки автора из JSONL файлов."""
-    author_dir = CHUNKS_DIR / author
+    """Нарезает processed-тексты автора на крупные куски по ~1500 символов.
+
+    Нарезка по границам абзацев (\\n\\n), с резервом — по точке. Возвращает
+    список dict-ов, совместимых по схеме с build_index чанками:
+    {text, book, chunk_id, author}.
+    """
+    author_dir = PROCESSED_DIR / author
     if not author_dir.exists():
-        raise FileNotFoundError(f"Нет чанков автора: {author_dir}")
+        raise FileNotFoundError(f"Нет processed-текстов автора: {author_dir}")
 
     chunks: list[dict] = []
-    for jsonl_path in sorted(author_dir.glob("*.jsonl")):
-        with open(jsonl_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    chunks.append(json.loads(line))
-    logger.info("Автор %s: загружено %d чанков", author, len(chunks))
+    for txt_path in sorted(author_dir.glob("*.txt")):
+        book = txt_path.stem
+        text = txt_path.read_text(encoding="utf-8")
+        # Делим по двойным переносам (абзацы), группируем до CHUNK_CHAR_SIZE
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        buf = ""
+        idx = 0
+        for p in paragraphs:
+            if len(buf) + len(p) + 2 > CHUNK_CHAR_SIZE and buf:
+                chunks.append({"text": buf, "book": book, "chunk_id": idx, "author": author})
+                idx += 1
+                buf = p
+            else:
+                buf = f"{buf}\n\n{p}" if buf else p
+        if buf:
+            chunks.append({"text": buf, "book": book, "chunk_id": idx, "author": author})
+
+    logger.info("Автор %s: нарезано %d кусков (по ~%d символов)",
+                author, len(chunks), CHUNK_CHAR_SIZE)
     return chunks
 
 
