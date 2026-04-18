@@ -45,7 +45,7 @@ OUTPUT_DIR = BASE_DIR / "data" / "synthetic"
 # Размер нарезки processed-текста на куски для подачи в LLM.
 # Не совпадает с чанками для RAG (256 токенов) — здесь нужны более крупные
 # семантически целостные фрагменты для осмысленных Q&A пар.
-CHUNK_CHAR_SIZE = 1500
+CHUNK_CHAR_SIZE = 1000
 
 AUTHOR_NAMES_RU = {
     "dostoevsky": "Фёдор Михайлович Достоевский",
@@ -79,7 +79,11 @@ USER_PROMPT_TEMPLATE = """Автор: {author_ru}
 
 # ---------- LLM providers ----------
 
-def call_groq(messages: list[dict], model: str = "llama-3.3-70b-versatile") -> str:
+class RateLimitError(Exception):
+    """HTTP 429 — нужно подождать и попробовать снова."""
+
+
+def call_groq(messages: list[dict], model: str = "llama-3.1-8b-instant") -> str:
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY не задан")
@@ -94,6 +98,10 @@ def call_groq(messages: list[dict], model: str = "llama-3.3-70b-versatile") -> s
         },
         timeout=60.0,
     )
+    if r.status_code == 429:
+        # Groq передаёт retry-after в заголовках; берём оттуда или дефолт 30 сек
+        wait = float(r.headers.get("retry-after", 30))
+        raise RateLimitError(f"HTTP 429, retry after {wait}s")
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
@@ -155,7 +163,8 @@ PROVIDERS: dict[str, Callable[[list[dict], str], str]] = {
 }
 
 DEFAULT_MODELS = {
-    "groq": "llama-3.3-70b-versatile",
+    # llama-3.1-8b-instant имеет выше TPM (30k) чем 70b (12k) — для training data хватает
+    "groq": "llama-3.1-8b-instant",
     "gemini": "gemini-2.0-flash",
     "anthropic": "claude-haiku-4-5",
 }
@@ -238,8 +247,13 @@ def generate_pair(
     author: str,
     provider_fn: Callable,
     model: str,
+    max_rate_limit_retries: int = 5,
 ) -> dict | None:
-    """Один вызов LLM → распарсенная пара (question, answer). None при ошибке."""
+    """Один вызов LLM → распарсенная пара. None при ошибке/пропуске.
+
+    Обрабатывает 429 через ожидание (exponential backoff).
+    Другие ошибки — пропуск с логированием.
+    """
     author_ru = AUTHOR_NAMES_RU.get(author, author)
     user_prompt = USER_PROMPT_TEMPLATE.format(
         author_ru=author_ru,
@@ -250,11 +264,25 @@ def generate_pair(
         {"role": "user", "content": user_prompt},
     ]
 
-    try:
-        raw = provider_fn(messages, model)
-    except Exception as e:
-        logger.warning("LLM call failed (chunk %s/%s): %s",
-                       chunk.get("book"), chunk.get("chunk_id"), e)
+    raw = None
+    for attempt in range(max_rate_limit_retries):
+        try:
+            raw = provider_fn(messages, model)
+            break
+        except RateLimitError as e:
+            wait = 30 * (2 ** attempt)  # 30, 60, 120, 240, 480 sec
+            wait = min(wait, 120)
+            logger.info("Rate limit hit, ждём %d сек (попытка %d/%d)...",
+                        wait, attempt + 1, max_rate_limit_retries)
+            time.sleep(wait)
+        except Exception as e:
+            logger.warning("LLM call failed (chunk %s/%s): %s",
+                           chunk.get("book"), chunk.get("chunk_id"), e)
+            return None
+
+    if raw is None:
+        logger.warning("Все попытки rate-limit retry исчерпаны для %s/%s",
+                       chunk.get("book"), chunk.get("chunk_id"))
         return None
 
     parsed = parse_llm_json(raw)
@@ -285,8 +313,8 @@ def main():
     parser.add_argument("--min-chunk-length", type=int, default=200,
                         help="пропускать чанки короче N символов (служебные куски)")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--rpm", type=int, default=30,
-                        help="rate limit — запросов в минуту (default 30)")
+    parser.add_argument("--rpm", type=int, default=12,
+                        help="rate limit — запросов в минуту (default 12 для Groq free)")
     args = parser.parse_args()
 
     provider_fn = PROVIDERS[args.provider]
