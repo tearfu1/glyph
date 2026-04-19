@@ -106,15 +106,15 @@ def call_groq(messages: list[dict], model: str = "llama-3.1-8b-instant") -> str:
     return r.json()["choices"][0]["message"]["content"]
 
 
-def call_gemini(messages: list[dict], model: str = "gemini-2.0-flash") -> str:
+def call_gemini(messages: list[dict], model: str = "gemini-1.5-flash") -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY не задан")
-    # Склеиваем system + user в единый user-prompt, т.к. Gemini REST API так проще
+    # Ключ передаём через header (не query param) — иначе он попадает в логи URL.
     combined = "\n\n".join(m["content"] for m in messages)
     r = httpx.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        params={"key": api_key},
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json={
             "contents": [{"parts": [{"text": combined}]}],
             "generationConfig": {
@@ -124,6 +124,9 @@ def call_gemini(messages: list[dict], model: str = "gemini-2.0-flash") -> str:
         },
         timeout=60.0,
     )
+    if r.status_code == 429:
+        wait = float(r.headers.get("retry-after", 30))
+        raise RateLimitError(f"HTTP 429, retry after {wait}s")
     r.raise_for_status()
     data = r.json()
     return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -165,7 +168,8 @@ PROVIDERS: dict[str, Callable[[list[dict], str], str]] = {
 DEFAULT_MODELS = {
     # llama-3.1-8b-instant имеет выше TPM (30k) чем 70b (12k) — для training data хватает
     "groq": "llama-3.1-8b-instant",
-    "gemini": "gemini-2.0-flash",
+    # gemini-1.5-flash имеет более щедрые лимиты в free tier чем 2.0
+    "gemini": "gemini-1.5-flash",
     "anthropic": "claude-haiku-4-5",
 }
 
