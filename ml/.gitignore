@@ -24,3 +24,4 @@ models/adapters/**/trainer_state.json
 models/adapters/**/optimizer.pt
 models/adapters/**/scheduler.pt
 models/adapters/**/training_args.bin
+*.log
