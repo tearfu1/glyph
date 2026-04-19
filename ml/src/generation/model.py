@@ -24,11 +24,16 @@ class ModelManager:
 
     def load_adapter(self, author: str) -> PeftModel:
         if author not in self.adapters:
-            adapter_path = ADAPTERS_DIR / author / "E3_high_rank"
-            if not adapter_path.exists():
-                adapter_path = ADAPTERS_DIR / author / "E1_default"
-            if not adapter_path.exists():
-                raise FileNotFoundError(f"Адаптер не найден: {adapter_path}")
+            # Приоритет: instruction-tuned (меньше галлюцинаций в ответах)
+            # → стилевой LoRA (лучший PPL на прозе, но чаще уходит от темы)
+            # → дефолтный как последний резерв.
+            for experiment in ("E5_instruct", "E3_high_rank", "E1_default"):
+                candidate = ADAPTERS_DIR / author / experiment
+                if candidate.exists():
+                    adapter_path = candidate
+                    break
+            else:
+                raise FileNotFoundError(f"Адаптер не найден: {ADAPTERS_DIR / author}")
             logger.info("Загрузка адаптера: %s", adapter_path)
             self.adapters[author] = PeftModel.from_pretrained(
                 self.base_model, str(adapter_path)
@@ -42,6 +47,8 @@ class ModelManager:
             logger.warning("Директория адаптеров не найдена: %s", ADAPTERS_DIR)
             return
         for author_dir in ADAPTERS_DIR.iterdir():
-            if author_dir.is_dir() and (author_dir / "E3_high_rank").exists() or (author_dir / "E1_default").exists():
+            if not author_dir.is_dir():
+                continue
+            if any((author_dir / exp).exists() for exp in ("E5_instruct", "E3_high_rank", "E1_default")):
                 self.load_adapter(author_dir.name)
         logger.info("Загружено адаптеров: %d", len(self.adapters))
