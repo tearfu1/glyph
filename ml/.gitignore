@@ -11,10 +11,12 @@ data/*
 !data/retrieval_cache.json
 !data/synthetic/
 
-# models/: по умолчанию игнорируем, но разрешаем адаптеры и eval-результаты
+# models/: по умолчанию игнорируем, но разрешаем адаптеры, eval-результаты,
+# а также jsonl-логи экспериментов обучения (нужны для этапа 10)
 models/*
 !models/adapters/
 !models/evaluation/
+!models/experiment_results*.jsonl
 
 # Trainer-мусор внутри адаптеров в git не нужен (200 MB лишних)
 models/adapters/**/checkpoint-*/

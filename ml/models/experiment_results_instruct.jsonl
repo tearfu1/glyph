@@ -1,0 +1,3 @@
+{"author": "dostoevsky", "experiment": "E5_instruct", "r": 16, "lora_alpha": 32, "lr": 0.0002, "epochs": 5, "train_loss": 3.9271, "eval_loss": 3.5936, "train_samples": 450, "eval_samples": 50}
+{"author": "chekhov", "experiment": "E5_instruct", "r": 16, "lora_alpha": 32, "lr": 0.0002, "epochs": 5, "train_loss": 3.9440, "eval_loss": 3.6495, "train_samples": 447, "eval_samples": 50}
+{"author": "bulgakov", "experiment": "E5_instruct", "r": 16, "lora_alpha": 32, "lr": 0.0002, "epochs": 5, "train_loss": 4.0397, "eval_loss": 3.7848, "train_samples": 450, "eval_samples": 50}
