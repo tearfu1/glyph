@@ -13,7 +13,9 @@ router = APIRouter()
 class GenerateRequest(BaseModel):
     question: str
     author: str
-    book_id: int | None = None
+    # book_id — UUID-строка от Rust-бэкенда; сейчас не используется,
+    # оставлено для будущей фильтрации по конкретной книге
+    book_id: str | None = None
 
 
 class SourceChunk(BaseModel):
