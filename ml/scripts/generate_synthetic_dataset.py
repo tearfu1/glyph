@@ -5,11 +5,13 @@
 data/synthetic/{author}.jsonl для последующего instruction-tuning.
 
 Провайдеры LLM (задаётся --provider или env LLM_PROVIDER):
-  - groq      (бесплатно, default; llama-3.3-70b-versatile)
+  - litellm   (корпоративный прокси, gpt-5.4-nano; OpenAI-compatible)
+  - groq      (бесплатно; llama-3.1-8b-instant)
   - gemini    (бесплатно; gemini-2.0-flash)
   - anthropic (платно; claude-haiku-4-5)
 
-API ключ читается из env:
+API ключи и endpoint'ы читаются из env:
+  LITELLM_API_KEY + LITELLM_BASE_URL (default http://litellm-proxy.ivandivan/v1)
   GROQ_API_KEY / GEMINI_API_KEY / ANTHROPIC_API_KEY
 
 Скрипт идемпотентный: повторный запуск продолжает с места остановки,
@@ -66,12 +68,13 @@ USER_PROMPT_TEMPLATE = """Автор: {author_ru}
 ---
 
 Задача:
-1. Придумай 1 вопрос читателя, на который этот фрагмент даёт ответ. Вопрос о содержании \
-(идеи, персонажи, мотивы, атмосфера), не дословный, не про грамматику. Формулируй \
-естественно — как живой вопрос в книжном клубе.
-2. Сформулируй ответ в стиле автора (2-4 предложения). Звучи как размышление самого автора \
-над текстом, а не как пересказ. Опирайся только на содержание фрагмента; не придумывай \
-внешних фактов.
+1. Придумай развёрнутый вопрос читателя (1-2 предложения, 15-30 слов) о содержании фрагмента \
+(идеи, мотивы, персонажи, атмосфера). Вопрос должен быть живым — как в книжном клубе: \
+с небольшим контекстом или уточнением, почему читателю это интересно. Избегай дословных \
+цитат и грамматических тем.
+2. Сформулируй ответ строго в 2-3 полноценных предложения (40-80 слов), в стиле автора. \
+Звучи как размышление самого автора — с характерной интонацией, ритмом, лексикой. \
+Опирайся ТОЛЬКО на содержание фрагмента; не придумывай внешних фактов, имён, дат.
 
 Верни строго JSON без пояснений и комментариев:
 {{"question": "<текст вопроса>", "answer": "<текст ответа>"}}"""
@@ -81,6 +84,35 @@ USER_PROMPT_TEMPLATE = """Автор: {author_ru}
 
 class RateLimitError(Exception):
     """HTTP 429 — нужно подождать и попробовать снова."""
+
+
+def call_litellm(messages: list[dict], model: str = "gpt-5.4-nano") -> str:
+    """Корпоративный LiteLLM-прокси (OpenAI-compatible API)."""
+    api_key = os.getenv("LITELLM_API_KEY")
+    if not api_key:
+        raise RuntimeError("LITELLM_API_KEY не задан (проверь ~/.bashrc)")
+    base_url = os.getenv("LITELLM_BASE_URL", "http://litellm-proxy.ivandivan/v1")
+    # GPT-5 family не принимает temperature!=1, поэтому не передаём его.
+    payload = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+    r = httpx.post(
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json=payload,
+        timeout=120.0,
+    )
+    if r.status_code == 429:
+        wait = float(r.headers.get("retry-after", 30))
+        raise RateLimitError(f"HTTP 429, retry after {wait}s")
+    if r.status_code >= 400:
+        raise httpx.HTTPStatusError(
+            f"LiteLLM HTTP {r.status_code}: {r.text[:500]}",
+            request=r.request, response=r,
+        )
+    return r.json()["choices"][0]["message"]["content"]
 
 
 def call_groq(messages: list[dict], model: str = "llama-3.1-8b-instant") -> str:
@@ -168,13 +200,15 @@ def call_anthropic(messages: list[dict], model: str = "claude-haiku-4-5") -> str
 
 
 PROVIDERS: dict[str, Callable[[list[dict], str], str]] = {
+    "litellm": call_litellm,
     "groq": call_groq,
     "gemini": call_gemini,
     "anthropic": call_anthropic,
 }
 
 DEFAULT_MODELS = {
-    # llama-3.1-8b-instant имеет выше TPM (30k) чем 70b (12k) — для training data хватает
+    # Корпоративный прокси: nano-модель быстрее и дешевле для массовой генерации
+    "litellm": "gpt-5.4-nano",
     "groq": "llama-3.1-8b-instant",
     "gemini": "gemini-2.0-flash",
     "anthropic": "claude-haiku-4-5",
