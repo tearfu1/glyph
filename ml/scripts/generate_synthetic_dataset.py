@@ -106,7 +106,7 @@ def call_groq(messages: list[dict], model: str = "llama-3.1-8b-instant") -> str:
     return r.json()["choices"][0]["message"]["content"]
 
 
-def call_gemini(messages: list[dict], model: str = "gemini-1.5-flash") -> str:
+def call_gemini(messages: list[dict], model: str = "gemini-2.0-flash") -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY не задан")
@@ -127,8 +127,16 @@ def call_gemini(messages: list[dict], model: str = "gemini-1.5-flash") -> str:
     if r.status_code == 429:
         wait = float(r.headers.get("retry-after", 30))
         raise RateLimitError(f"HTTP 429, retry after {wait}s")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        # Логируем тело ошибки — Gemini возвращает понятное сообщение
+        raise httpx.HTTPStatusError(
+            f"Gemini HTTP {r.status_code}: {r.text[:500]}",
+            request=r.request, response=r,
+        )
     data = r.json()
+    # У Gemini в редких случаях candidates пустой (блок safety) — обрабатываем явно
+    if not data.get("candidates"):
+        raise RuntimeError(f"Gemini вернул пустой ответ: {data}")
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
@@ -168,8 +176,7 @@ PROVIDERS: dict[str, Callable[[list[dict], str], str]] = {
 DEFAULT_MODELS = {
     # llama-3.1-8b-instant имеет выше TPM (30k) чем 70b (12k) — для training data хватает
     "groq": "llama-3.1-8b-instant",
-    # gemini-1.5-flash имеет более щедрые лимиты в free tier чем 2.0
-    "gemini": "gemini-1.5-flash",
+    "gemini": "gemini-2.0-flash",
     "anthropic": "claude-haiku-4-5",
 }
 
